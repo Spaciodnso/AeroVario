@@ -8,12 +8,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AeroVario Pro (Vanilla)</title>
+    
+    <!-- LEAFLET CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
     <style>
         /* --- RESET & CORE STYLES --- */
         :root {
             --neon-green: #a3e635;
             --neon-red: #ef4444;
             --neon-purple: #d8b4fe;
+            --neon-blue: #3b82f6;
             --bg-color: #000000;
             --panel-bg: #111827;
             --text-white: #f3f4f6;
@@ -88,32 +93,22 @@
             align-items: center;
             justify-content: space-between;
             padding: 0 16px;
-            font-size: 0.7rem; /* Smaller font to fit both statuses */
+            font-size: 0.7rem;
             color: var(--text-gray);
             border-bottom: 1px solid #333;
             flex-shrink: 0;
         }
 
-        .status-group {
-            display: flex;
-            gap: 10px;
-            font-weight: bold;
-        }
+        .status-group { display: flex; gap: 10px; font-weight: bold; }
 
-        /* Status Badges */
         .status-badge { padding: 4px 6px; border-radius: 4px; transition: color 0.3s; border: 1px solid transparent; }
         .status-badge.error-clickable {
-            background: rgba(239, 68, 68, 0.2);
-            border-color: var(--neon-red);
-            animation: pulse-border 2s infinite;
-            cursor: pointer;
+            background: rgba(239, 68, 68, 0.2); border-color: var(--neon-red); animation: pulse-border 2s infinite; cursor: pointer;
         }
 
         .icon-btn {
-            background: #1f2937; border: none; color: white;
-            width: 36px; height: 36px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1rem; cursor: pointer;
+            background: #1f2937; border: none; color: white; width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 1rem; cursor: pointer;
         }
 
         /* Main Layout */
@@ -127,25 +122,14 @@
         }
 
         /* Section 1: Vario & Bar */
-        .vario-section {
-            display: flex;
-            height: 140px; /* Increased height for Compass */
-            gap: 8px;
-            flex-shrink: 0;
-        }
+        .vario-section { display: flex; height: 140px; gap: 8px; flex-shrink: 0; }
 
         /* Vario Bar */
         .vario-container {
-            width: 30px;
-            background: #1f2937;
-            border-radius: 15px;
-            position: relative;
-            overflow: hidden;
-            border: 1px solid #374151;
+            width: 30px; background: #1f2937; border-radius: 15px; position: relative; overflow: hidden; border: 1px solid #374151;
         }
         .vario-center-line {
-            position: absolute; top: 50%; left: 0; width: 100%; height: 2px;
-            background: rgba(255,255,255,0.3); z-index: 10;
+            position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: rgba(255,255,255,0.3); z-index: 10;
         }
         .vario-bar {
             position: absolute; left: 0; width: 100%;
@@ -155,149 +139,109 @@
 
         /* Digital Vario Box */
         .digital-vario-box {
-            flex: 1;
-            background: rgba(17, 24, 39, 0.6);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column; /* Stack Number then Compass */
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #374151;
-            position: relative;
-            padding: 5px;
+            flex: 1; background: rgba(17, 24, 39, 0.6); border-radius: 12px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border: 1px solid #374151; position: relative; padding: 5px;
         }
         #value-vario { font-size: 3rem; font-weight: 800; letter-spacing: -2px; line-height: 1; margin-top: 5px; }
         .climbing { color: var(--neon-green); }
         .sinking { color: var(--neon-red); }
 
-        /* --- COMPASS STYLES --- */
+        /* Compass */
         .compass-ring {
-            width: 60px;
-            height: 60px;
-            border: 2px solid #374151;
-            border-radius: 50%;
-            position: relative;
-            margin-top: 5px;
-            background: radial-gradient(circle, #1f2937 20%, #000 100%);
-            box-shadow: inset 0 0 10px #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            width: 60px; height: 60px; border: 2px solid #374151; border-radius: 50%; position: relative;
+            margin-top: 5px; background: radial-gradient(circle, #1f2937 20%, #000 100%);
+            box-shadow: inset 0 0 10px #000; display: flex; justify-content: center; align-items: center;
         }
-        .compass-label {
-            position: absolute;
-            font-size: 9px;
-            font-weight: bold;
-            color: #4b5563;
-        }
+        .compass-label { position: absolute; font-size: 9px; font-weight: bold; color: #4b5563; }
         .lbl-n { top: 2px; left: 50%; transform: translateX(-50%); color: var(--neon-red); }
         .lbl-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
         .lbl-e { right: 3px; top: 50%; transform: translateY(-50%); }
         .lbl-w { left: 3px; top: 50%; transform: translateY(-50%); }
-
-        .compass-arrow-container {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            top: 0; left: 0;
-            transition: transform 0.1s linear; /* Faster transition for compass */
-        }
+        .compass-arrow-container { position: absolute; width: 100%; height: 100%; top: 0; left: 0; transition: transform 0.1s linear; }
         .compass-arrow {
-            width: 0; 
-            height: 0; 
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-bottom: 30px solid var(--neon-green);
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -100%); /* Pivot bottom center */
-            transform-origin: 50% 100%;
-            filter: drop-shadow(0 0 4px rgba(163,230,53,0.5));
+            width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent;
+            border-bottom: 30px solid var(--neon-green); position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -100%); transform-origin: 50% 100%; filter: drop-shadow(0 0 4px rgba(163,230,53,0.5));
         }
-        .compass-value-text {
-            position: absolute; bottom: -12px; font-size: 9px; color: #6b7280; font-family: monospace;
+        .compass-value-text { position: absolute; bottom: -12px; font-size: 9px; color: #6b7280; font-family: monospace; }
+
+        /* --- VIEW SWITCHER (TABS) --- */
+        .view-switcher {
+            display: flex; gap: 4px; margin-bottom: 0; flex-shrink: 0;
+        }
+        .view-tab {
+            flex: 1; background: #111827; border: 1px solid #374151; border-bottom: none;
+            color: #6b7280; font-size: 0.7rem; font-weight: bold; padding: 6px; border-radius: 8px 8px 0 0;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .view-tab.active {
+            background: #050505; color: var(--neon-green); border-color: var(--neon-green); border-bottom: 1px solid #050505;
         }
 
-        /* Section 2: Thermal Radar (Canvas) */
+        /* --- VISUALIZATION AREA (Stack) --- */
+        .vis-container {
+            flex: 1; position: relative; border: 1px solid #374151; 
+            border-top: 1px solid var(--neon-green); /* Highlight active tab connection */
+            background: #050505; border-radius: 0 0 12px 12px; overflow: hidden; min-height: 150px;
+        }
+
+        /* Thermal Radar */
         .radar-wrapper {
-            flex: 1; /* Takes available space */
-            background: #050505;
-            border-radius: 12px;
-            border: 1px solid #374151;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            min-height: 120px;
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0;
+            display: flex; justify-content: center; align-items: center;
         }
         #thermal-canvas { width: 100%; height: 100%; }
-        .radar-overlay-text {
-            position: absolute; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none;
-        }
+        .radar-overlay-text { position: absolute; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
         .radar-orientation { top: 5px; left: 5px; color: var(--neon-green); }
         .radar-scale { bottom: 5px; right: 5px; }
 
-        /* Section 3: Info Grid (Compact) */
+        /* Leaflet Map */
+        #map-wrapper {
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 10;
+            display: none; /* Hidden by default */
+        }
+        #map { width: 100%; height: 100%; background: #222; }
+        /* Dark Mode Map Filter */
+        .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
+        /* Fix markers not being inverted */
+        .leaflet-marker-icon { filter: none; }
+
+        /* Info Grid */
         .info-grid {
-            height: 80px;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 6px;
-            flex-shrink: 0;
+            height: 80px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; flex-shrink: 0;
         }
         .card {
-            background: var(--panel-bg);
-            border-radius: 8px;
-            padding: 6px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            border: 1px solid #374151;
+            background: var(--panel-bg); border-radius: 8px; padding: 6px;
+            display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #374151;
         }
         .label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-gray); }
         .value { font-size: 1.1rem; font-weight: bold; text-align: right; }
         .unit { font-size: 0.65rem; color: var(--text-gray); text-align: right; }
 
         #btn-stop {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid var(--neon-red);
-            color: var(--neon-red);
-            padding: 12px;
-            border-radius: 12px;
-            font-weight: bold;
-            text-transform: uppercase;
-            width: calc(100% - 16px);
-            margin: 0 8px 8px 8px;
-            flex-shrink: 0;
+            background: rgba(239, 68, 68, 0.2); border: 1px solid var(--neon-red); color: var(--neon-red);
+            padding: 12px; border-radius: 12px; font-weight: bold; text-transform: uppercase;
+            width: calc(100% - 16px); margin: 0 8px 8px 8px; flex-shrink: 0;
         }
 
-        /* --- MODALS & OVERLAYS --- */
+        /* --- MODALS --- */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 100;
+            background: rgba(0,0,0,0.95); z-index: 1000; /* High Z to cover map */
             display: flex; flex-direction: column; padding: 20px; overflow-y: auto;
         }
-        .modal-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px;
-        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
         .modal-title { font-size: 1.2rem; font-weight: bold; color: var(--neon-green); }
         
         /* SETTINGS STYLES */
-        .setting-group {
-            background: #1f2937; padding: 15px; border-radius: 10px;
-            margin-bottom: 10px; border: 1px solid #374151;
-        }
+        .setting-group { background: #1f2937; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #374151; }
         .setting-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .setting-inputs { border-top: 1px solid #374151; padding-top: 10px; margin-top: 10px; }
         .input-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
         .input-row label { font-size: 0.8rem; color: #9ca3af; }
         
-        input[type="number"], select {
-            background: #000; color: white; border: 1px solid #4b5563;
-            padding: 6px; border-radius: 6px; width: 100px; text-align: right;
-        }
+        input[type="number"], select { background: #000; color: white; border: 1px solid #4b5563; padding: 6px; border-radius: 6px; width: 100px; text-align: right; }
 
         /* Toggle Switch */
         .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
@@ -324,6 +268,9 @@
         @keyframes pulse-border { 0% { border-color: var(--neon-red); } 50% { border-color: transparent; } 100% { border-color: var(--neon-red); } }
         .safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
+    
+    <!-- LEAFLET JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="importmap">
 {
   "imports": {
@@ -387,11 +334,25 @@
                 </div>
             </div>
 
-            <!-- Section 2: Thermal Radar -->
-            <div class="radar-wrapper">
-                <canvas id="thermal-canvas"></canvas>
-                <span class="radar-overlay-text radar-orientation">TRACK UP</span>
-                <span class="radar-overlay-text radar-scale">200m</span>
+            <!-- View Switcher Tabs -->
+            <div class="view-switcher">
+                <button id="tab-radar" class="view-tab active" onclick="switchView('radar')">RADAR 🎯</button>
+                <button id="tab-map" class="view-tab" onclick="switchView('map')">MAPA 🗺️</button>
+            </div>
+
+            <!-- Section 2: Visual Container (Swappable) -->
+            <div class="vis-container">
+                <!-- Thermal Radar -->
+                <div id="view-radar" class="radar-wrapper">
+                    <canvas id="thermal-canvas"></canvas>
+                    <span class="radar-overlay-text radar-orientation">TRACK UP</span>
+                    <span class="radar-overlay-text radar-scale">200m</span>
+                </div>
+
+                <!-- Leaflet Map -->
+                <div id="view-map" id="map-wrapper">
+                    <div id="map"></div>
+                </div>
             </div>
 
             <!-- Section 3: Grid Info -->
@@ -420,9 +381,7 @@
             <span class="modal-title">Configuración</span>
             <button class="icon-btn" onclick="toggleModal('modal-settings', false)">✕</button>
         </div>
-        <div id="settings-content">
-            <!-- Generated via JS -->
-        </div>
+        <div id="settings-content"></div>
         <button onclick="saveSettingsAndClose()" class="start-btn w-full" style="margin-top:20px; padding:10px;">Guardar y Cerrar</button>
     </div>
 
@@ -455,11 +414,85 @@
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0 },
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
-            trackHistory: [] // {lat, lon, vario, t}
+            trackHistory: [] 
         };
 
-        // Ensure settings structure compatibility
-        if (!appState.settings.alerts) appState.settings = DEFAULT_SETTINGS;
+        // --- MAP & VIEW VARIABLES ---
+        let mapInstance = null;
+        let mapMarker = null;
+        let mapPolyline = null;
+        let currentView = 'radar'; // 'radar' or 'map'
+
+        // --- VIEW SWITCHING ---
+        window.switchView = (view) => {
+            currentView = view;
+            
+            // Update Tabs
+            $('tab-radar').className = view === 'radar' ? 'view-tab active' : 'view-tab';
+            $('tab-map').className = view === 'map' ? 'view-tab active' : 'view-tab';
+            
+            // Update Containers
+            if (view === 'radar') {
+                $('view-radar').style.display = 'flex';
+                $('view-map').style.display = 'none';
+            } else {
+                $('view-radar').style.display = 'none';
+                $('view-map').style.display = 'block';
+                // Important: fix Leaflet sizing when unhiding
+                if (mapInstance) mapInstance.invalidateSize();
+            }
+        };
+
+        // --- MAP INITIALIZATION ---
+        function initMap() {
+            if (mapInstance) return;
+            
+            // Create Map
+            mapInstance = L.map('map', {
+                zoomControl: false, // Cleaner UI
+                attributionControl: false
+            }).setView([0, 0], 2);
+
+            // OpenStreetMap Tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+            }).addTo(mapInstance);
+
+            // Pilot Marker (Red Circle with white border)
+            mapMarker = L.circleMarker([0,0], {
+                radius: 8,
+                fillColor: "#a3e635",
+                color: "#fff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 1
+            }).addTo(mapInstance);
+
+            // Flight Path (Blue Neon Line)
+            mapPolyline = L.polyline([], {
+                color: '#3b82f6', // Tailwind blue-500
+                weight: 4,
+                opacity: 0.8
+            }).addTo(mapInstance);
+        }
+
+        function updateMap(lat, lon) {
+            if (!mapInstance || !lat || !lon) return;
+
+            const latLng = [lat, lon];
+            
+            // Update Marker
+            mapMarker.setLatLng(latLng);
+            
+            // Add to Track
+            mapPolyline.addLatLng(latLng);
+
+            // Center map (only if user hasn't dragged significantly? For now always center)
+            // Or center only if view is 'map' to save CPU
+            if (currentView === 'map') {
+                mapInstance.setView(latLng);
+            }
+        }
 
         // --- SETTINGS LOGIC ---
         function renderSettings() {
@@ -513,7 +546,7 @@
             const alert = appState.settings.alerts.find(a => a.id === id);
             if (alert) {
                 alert[field] = value;
-                if (field === 'enabled') renderSettings(); // Re-render to show/hide inputs
+                if (field === 'enabled') renderSettings(); 
             }
         };
 
@@ -533,7 +566,6 @@
                 return;
             }
 
-            // Sort by newest
             logs.reverse().forEach(log => {
                 const date = new Date(log.date).toLocaleString();
                 const duration = Math.floor(log.durationSeconds / 60) + 'm ' + Math.floor(log.durationSeconds % 60) + 's';
@@ -556,11 +588,9 @@
         function endFlight() {
             if (!appState.flying) return;
             
-            // Calculate Stats
             const now = Date.now();
             const duration = (now - appState.startTime) / 1000;
             
-            // Only save if > 10 seconds
             if (duration > 10) {
                 const log = {
                     date: appState.startTime,
@@ -594,7 +624,7 @@
         window.addEventListener('resize', resizeCanvas);
 
         function drawRadar() {
-            if (!appState.flying) return;
+            if (!appState.flying || currentView !== 'radar') return; // Only draw if visible
             const w = canvas.logicalWidth;
             const h = canvas.logicalHeight;
             const cx = w / 2;
@@ -616,7 +646,6 @@
             ctx.moveTo(cx, cy - 6); ctx.lineTo(cx - 4, cy + 4); ctx.lineTo(cx + 4, cy + 4);
             ctx.fill();
 
-            // Draw Track
             if (appState.trackHistory.length < 2) return;
             
             const currLat = appState.flightData.lat;
@@ -686,16 +715,13 @@
             let glide = 0;
             if (vario < -0.5 && speedKmh > 5) glide = Math.abs((speedKmh/3.6)/vario);
             
-            // HEADING LOGIC:
-            // If moving fast (>5km/h), GPS Heading is more accurate for "Track".
-            // If moving slow, use Magnetic Heading from sensors.
             let finalHeading = 0;
             if (speedKmh > 5 && coords.heading && !isNaN(coords.heading)) {
                 finalHeading = coords.heading;
             } else if (appState.sensors.magHeading !== null) {
                 finalHeading = appState.sensors.magHeading;
             } else if (coords.heading && !isNaN(coords.heading)) {
-                finalHeading = coords.heading; // Fallback
+                finalHeading = coords.heading; 
             }
             appState.flightData.heading = finalHeading;
 
@@ -707,12 +733,12 @@
             appState.flightData.lat = coords.latitude;
             appState.flightData.lon = coords.longitude;
 
-            // Stats update
             appState.stats.maxAlt = Math.max(appState.stats.maxAlt, appState.flightData.alt);
             appState.stats.maxClimb = Math.max(appState.stats.maxClimb, vario);
             appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
 
             if (coords.latitude && coords.longitude) {
+                // Radar History
                 appState.trackHistory.push({
                     lat: coords.latitude, lon: coords.longitude, vario: vario, t: Date.now()
                 });
@@ -720,6 +746,9 @@
                 if (appState.trackHistory[0] && appState.trackHistory[0].t < cutoff) {
                     appState.trackHistory = appState.trackHistory.filter(p => p.t > cutoff);
                 }
+
+                // Update Map
+                updateMap(coords.latitude, coords.longitude);
             }
 
             updateUI();
@@ -766,9 +795,7 @@
             stopAll() { this.stopBeep(); if(this.osc){try{this.osc.stop();}catch(e){} this.osc=null;} }
             playAlert(type) {
                 if(appState.muted) return; this.stopAll();
-                
                 if(type === 'beep') {
-                    // Double Beep pattern
                     const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
                     o.type='square'; o.frequency.value=1500; o.connect(g); g.connect(this.gain);
                     const now = this.ctx.currentTime;
@@ -784,13 +811,8 @@
                     g.gain.setValueAtTime(0.5, now); g.gain.exponentialRampToValueAtTime(0.01, now+0.4);
                     o.start(now); o.stop(now+0.4);
                 }
-                else if(type === 'flatline') {
-                    this.playTone(150, 'sawtooth', 0.8);
-                }
-                else {
-                    // Default Siren
-                    this.playTone(800, 'triangle', 0.6);
-                }
+                else if(type === 'flatline') { this.playTone(150, 'sawtooth', 0.8); }
+                else { this.playTone(800, 'triangle', 0.6); }
             }
         }
         const audio = new AudioEngine();
@@ -818,7 +840,6 @@
 
         function checkAlerts(data) {
             const now = Date.now();
-            
             let activeAlert = null;
             let soundToPlay = null;
 
@@ -827,7 +848,6 @@
                 
                 // Low Alt
                 if(a.type === 'ALTITUDE_LOW' && data.alt < a.threshold && data.alt > 0) { 
-                    // Only alert if we haven't recently
                     if (now - lastAlertTime > 5000) {
                         activeAlert='BAJA ALTITUD'; 
                         soundToPlay = a.sound; 
@@ -861,8 +881,8 @@
 
         function initFlightSystem() {
             audio.init();
-            
-            // 1. Request Motion/Orientation Permissions (iOS 13+)
+            initMap(); // Initialize Leaflet
+
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try {
                      DeviceOrientationEvent.requestPermission().then(response => {
@@ -870,21 +890,19 @@
                         else { $('error-console').innerText += "\nPermiso Orientación Denegado"; }
                      });
                  } catch(e){ $('error-console').innerText += "\nErr Permiso: "+e; }
-            } else {
-                // Non-iOS or older devices
-                startSensors();
-            }
+            } else { startSensors(); }
 
             $('screen-start').classList.add('hidden');
             $('screen-hud').classList.remove('hidden'); $('screen-hud').classList.add('flex');
             
-            // Initialize Flight State
             appState.flying = true;
             appState.startTime = Date.now();
             appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0 };
             appState.takeoffAlt = null;
             
             resizeCanvas(); 
+            // Initial view switch ensures sizes are correct
+            switchView('radar');
             
             if('geolocation' in navigator) {
                 $('gps-status').innerText = "GPS: Buscando...";
@@ -901,18 +919,12 @@
 
         function startSensors() {
             window.addEventListener('deviceorientation', (e) => {
-                // iOS WebKit Compass
                 if (e.webkitCompassHeading) {
                     appState.sensors.magHeading = e.webkitCompassHeading;
                     const st = $('compass-status');
-                    if(st.innerText !== "MAG: OK") {
-                        st.innerText = "MAG: OK";
-                        st.style.color = 'var(--neon-green)';
-                    }
+                    if(st.innerText !== "MAG: OK") { st.innerText = "MAG: OK"; st.style.color = 'var(--neon-green)'; }
                 } 
-                // Android / Absolute Orientation
                 else if (e.alpha !== null) {
-                     // Simplified fallback for absolute orientation if available
                      appState.sensors.magHeading = 360 - e.alpha; 
                      $('compass-status').innerText = "MAG: OK";
                 }
