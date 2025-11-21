@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -96,6 +97,19 @@
             font-size: 0.8rem;
             color: var(--text-gray);
             border-bottom: 1px solid #333;
+        }
+
+        /* GPS Status Styling specifically for errors */
+        #gps-status {
+            transition: color 0.3s;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        #gps-status.error-clickable {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--neon-red);
+            cursor: pointer;
+            animation: pulse-border 2s infinite;
         }
 
         .icon-btn {
@@ -267,6 +281,7 @@
         }
 
         @keyframes pulse { from { opacity: 0.8; } to { opacity: 1; transform: translateX(-50%) scale(1.05); } }
+        @keyframes pulse-border { 0% { border-color: var(--neon-red); } 50% { border-color: transparent; } 100% { border-color: var(--neon-red); } }
 
         /* Safe Area for iPhone */
         .safe-area { padding-bottom: env(safe-area-inset-bottom); }
@@ -295,7 +310,7 @@
         <button id="btn-logs" class="secondary-btn">Historial de Vuelos</button>
         
         <div id="error-console" style="margin-top: 20px; color: red; font-size: 10px; max-width: 90%; white-space: pre-wrap;"></div>
-        <p style="position:absolute; bottom:20px; font-size:10px; color:#333;">v1.0 Vanilla JS - OLED Ready</p>
+        <p style="position:absolute; bottom:20px; font-size:10px; color:#333;">v1.1 Vanilla - GPS Fix</p>
     </div>
 
     <!-- === HUD SCREEN === -->
@@ -306,7 +321,8 @@
         <!-- Top Bar -->
         <div class="top-bar">
             <button id="btn-settings" class="icon-btn">⚙️</button>
-            <div id="gps-status" style="color: #eab308;">GPS: Buscando...</div>
+            <!-- GPS status is now interactive -->
+            <div id="gps-status" style="color: #eab308;">GPS: Inic...</div>
             <button id="btn-mute" class="icon-btn">🔊</button>
         </div>
 
@@ -738,42 +754,89 @@
             }
         }
 
-        // --- 6. APP CONTROL & EVENT LISTENERS ---
+        // --- 6. GPS LOGIC (NEW) ---
+        function initFlightSystem() {
+             // 1. Audio Context
+             audio.init();
 
-        $('btn-start').addEventListener('click', async () => {
-            // 1. Audio Context (Must happen on user gesture)
-            audio.init();
+             // 2. iOS Motion Permissions
+             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try { DeviceOrientationEvent.requestPermission(); } catch(e) {}
+             }
+
+             // 3. Switch Screens
+             $('screen-start').classList.add('hidden');
+             $('screen-hud').classList.remove('hidden');
+             $('screen-hud').classList.add('flex');
+
+             appState.flying = true;
+             appState.startTime = Date.now();
+             appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, points: 0 };
+
+             startGPS();
+        }
+
+        function startGPS() {
+            // UI State: Searching
+            $('gps-status').innerText = "GPS: Buscando...";
+            $('gps-status').style.color = '#eab308'; 
+            $('gps-status').classList.remove('error-clickable');
+            $('gps-status').onclick = null; // Remove old handlers
+
+            if (!('geolocation' in navigator)) {
+                handleGPSError({code: 0, message: "No soportado"});
+                return;
+            }
+
+            watchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const el = $('gps-status');
+                    el.innerText = "GPS: OK";
+                    el.style.color = 'var(--neon-green)';
+                    el.classList.remove('error-clickable');
+                    el.onclick = null;
+                    processFlightData(pos.coords, pos.timestamp);
+                },
+                handleGPSError,
+                { enableHighAccuracy: true, maximumAge: 0 }
+            );
+        }
+
+        function handleGPSError(err) {
+            console.error("GPS Error", err);
+            const el = $('gps-status');
             
-            // 2. iOS Permissions
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try { await DeviceOrientationEvent.requestPermission(); } catch(e) { console.log("Permission denied/error"); }
+            let msg = "GPS Error";
+            // Error Code 1 = PERMISSION_DENIED
+            if (err.code === 1) {
+                msg = "GPS DENEGADO (Tocar)";
+            } else if (err.code === 2) {
+                msg = "GPS Sin señal (Tocar)";
+            } else if (err.code === 3) {
+                msg = "GPS Timeout (Tocar)";
             }
 
-            // 3. Start GPS
-            if ('geolocation' in navigator) {
-                $('screen-start').classList.add('hidden');
-                $('screen-hud').classList.remove('hidden');
-                $('screen-hud').classList.add('flex');
-                
-                appState.flying = true;
-                appState.startTime = Date.now();
-                appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, points: 0 };
-                
-                watchId = navigator.geolocation.watchPosition(
-                    (pos) => processFlightData(pos.coords, pos.timestamp),
-                    (err) => { $('gps-status').innerText = "GPS Error: " + err.message; $('gps-status').style.color = 'red'; },
-                    { enableHighAccuracy: true, maximumAge: 0 }
-                );
-                $('gps-status').innerText = "GPS: OK";
-                $('gps-status').style.color = 'var(--neon-green)';
-            } else {
-                alert("Geolocalización no soportada.");
-            }
-        });
+            el.innerText = msg;
+            el.style.color = 'var(--neon-red)';
+            el.classList.add('error-clickable');
+
+            // Allow Retry on Click
+            el.onclick = () => {
+                if (err.code === 1) {
+                    alert("⚠️ ACCESO DENEGADO\n\nTu dispositivo ha bloqueado el GPS para esta web.\n\nSOLUCIÓN:\n1. Recarga la página (a veces esto resetea la solicitud).\n2. Si no funciona, ve a: Ajustes > Privacidad y Seguridad > Localización > Sitios Web (en Safari) y permite el acceso.");
+                }
+                // Attempt restart
+                startGPS(); 
+            };
+        }
+
+        // --- 7. APP CONTROL & EVENT LISTENERS ---
+
+        $('btn-start').addEventListener('click', initFlightSystem);
 
         $('btn-stop').addEventListener('click', () => {
             if (confirm("¿Terminar vuelo y guardar?")) {
-                navigator.geolocation.clearWatch(watchId);
+                if(watchId) navigator.geolocation.clearWatch(watchId);
                 audio.stopAll();
                 
                 // Save Log
@@ -808,7 +871,7 @@
         $('btn-settings').addEventListener('click', () => toggleModal('modal-settings', true));
         $('btn-logs').addEventListener('click', () => toggleModal('modal-logs', true));
 
-        // --- 7. RENDER FUNCTIONS ---
+        // --- 8. RENDER FUNCTIONS ---
 
         function renderSettings() {
             const container = $('settings-content');
@@ -880,7 +943,7 @@
             });
         }
 
-        // --- 8. INITIALIZATION ---
+        // --- 9. INITIALIZATION ---
         // Create Ticks for Vario
         for(let i=1; i<=4; i++) {
             const topTick = document.createElement('div'); topTick.className = 'tick'; topTick.style.top = (50 - i*10) + '%';
