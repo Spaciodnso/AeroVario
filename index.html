@@ -1,82 +1,894 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>AeroVario Pro</title>
-    <meta name="theme-color" content="#000000" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <script src="https://cdn.tailwindcss.com"></script>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>AeroVario Pro (Vanilla)</title>
     <style>
-      /* OLED Optimization */
-      body {
-        background-color: #000000;
-        color: #ffffff;
-        overscroll-behavior: none;
-        -webkit-user-select: none;
-        user-select: none;
-        touch-action: manipulation;
-        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      }
-      /* Hide scrollbar for PWA feel */
-      ::-webkit-scrollbar {
-        display: none;
-      }
-      #error-log {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        background: rgba(255, 0, 0, 0.9);
-        color: white;
-        padding: 10px;
-        z-index: 9999;
-        font-size: 12px;
-        white-space: pre-wrap;
-        display: none;
-      }
+        /* --- RESET & CORE STYLES --- */
+        :root {
+            --neon-green: #a3e635;
+            --neon-red: #ef4444;
+            --bg-color: #000000;
+            --panel-bg: #111827;
+            --text-white: #f3f4f6;
+            --text-gray: #9ca3af;
+        }
+
+        * { box-sizing: border-box; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-white);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* --- UTILITIES --- */
+        .hidden { display: none !important; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .items-center { align-items: center; }
+        .justify-center { justify-content: center; }
+        .justify-between { justify-content: space-between; }
+        .w-full { width: 100%; }
+        .h-full { height: 100%; }
+        .text-center { text-align: center; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        .font-bold { font-weight: 700; }
+        .absolute { position: absolute; }
+        .relative { position: relative; }
+        .p-4 { padding: 1rem; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-4 { gap: 1rem; }
+
+        /* --- SCREENS --- */
+        #screen-start, #screen-hud {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        /* --- START SCREEN --- */
+        .start-btn {
+            background: var(--neon-green);
+            color: black;
+            border: none;
+            padding: 20px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(163, 230, 53, 0.4);
+            transition: transform 0.1s;
+        }
+        .start-btn:active { transform: scale(0.95); }
+        .secondary-btn {
+            background: #374151;
+            color: white;
+            border: 1px solid #4b5563;
+            padding: 12px 24px;
+            border-radius: 12px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+
+        /* --- HUD COMPONENTS --- */
+        .top-bar {
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            font-size: 0.8rem;
+            color: var(--text-gray);
+            border-bottom: 1px solid #333;
+        }
+
+        .icon-btn {
+            background: #1f2937;
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        .main-display {
+            flex: 1;
+            display: flex;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        /* Vario Bar */
+        .vario-container {
+            width: 40px;
+            background: #1f2937;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #374151;
+        }
+        .vario-center-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(255,255,255,0.3);
+            z-index: 10;
+        }
+        .vario-bar {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            transition: height 0.1s linear, top 0.1s linear, bottom 0.1s linear, background-color 0.2s;
+        }
+        .tick { position: absolute; right: 0; width: 8px; height: 1px; background: #666; }
+
+        /* Digital Vario */
+        .digital-vario-box {
+            flex: 1;
+            background: rgba(17, 24, 39, 0.6);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #374151;
+            position: relative;
+        }
+        #value-vario { font-size: 5rem; font-weight: 800; letter-spacing: -2px; }
+        .climbing { color: var(--neon-green); }
+        .sinking { color: var(--neon-red); }
+        
+        /* Info Grid */
+        .info-grid {
+            height: 35%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 10px;
+        }
+        .card {
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border: 1px solid #374151;
+            position: relative;
+        }
+        .label { font-size: 0.7rem; text-transform: uppercase; color: var(--text-gray); }
+        .value { font-size: 2rem; font-weight: bold; text-align: right; }
+        .unit { font-size: 0.8rem; color: var(--text-gray); }
+
+        #btn-stop {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--neon-red);
+            color: var(--neon-red);
+            margin: 10px;
+            padding: 15px;
+            border-radius: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        /* --- MODALS --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        .modal-title { font-size: 1.2rem; font-weight: bold; color: var(--neon-green); }
+        .close-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
+        
+        /* Settings Form */
+        .setting-group {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #374151;
+        }
+        .input-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        input[type="number"], select {
+            background: black;
+            color: white;
+            border: 1px solid #4b5563;
+            padding: 8px;
+            border-radius: 6px;
+            width: 100px;
+        }
+        input[type="checkbox"] { transform: scale(1.5); }
+
+        /* Log List */
+        .log-item {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #374151;
+            cursor: pointer;
+        }
+        .log-date { font-weight: bold; color: white; }
+        .log-stats { font-size: 0.8rem; color: var(--text-gray); display: flex; gap: 10px; margin-top: 5px; }
+
+        /* Alert Overlay */
+        #alert-overlay {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--neon-red);
+            color: black;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            z-index: 50;
+            box-shadow: 0 0 15px var(--neon-red);
+            animation: pulse 0.5s infinite alternate;
+            display: none;
+            text-align: center;
+            width: 90%;
+        }
+
+        @keyframes pulse { from { opacity: 0.8; } to { opacity: 1; transform: translateX(-50%) scale(1.05); } }
+
+        /* Safe Area for iPhone */
+        .safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
-    <script>
-      window.onerror = function(msg, url, line, col, error) {
-        var el = document.getElementById('error-log');
-        if (el) {
-          el.style.display = 'block';
-          el.innerHTML += "Error: " + msg + "\n" + (url || '') + ":" + (line || '') + "\n" + (error ? error.stack : '') + "\n\n";
-        }
-        // Also show the root element just in case
-        var root = document.getElementById('root');
-        if (root && root.innerHTML === 'Loading AeroVario...') {
-            root.innerHTML = '<div style="padding:20px; text-align:center"><h1>Failed to Load</h1><p>See error log above.</p></div>';
-        }
-      };
-      window.addEventListener('unhandledrejection', function(event) {
-        var el = document.getElementById('error-log');
-        if (el) {
-          el.style.display = 'block';
-          el.innerHTML += "Promise Error: " + event.reason + "\n\n";
-        }
-      });
-    </script>
-  <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.0/client",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0"
   }
 }
 </script>
 </head>
-  <body>
-    <div id="error-log"></div>
-    <div id="root" class="h-screen w-screen flex items-center justify-center text-gray-500 animate-pulse">
-      Loading AeroVario...
+<body>
+
+    <!-- === START SCREEN === -->
+    <div id="screen-start" class="flex flex-col items-center justify-center relative">
+        <div style="position:absolute; top:0; width:100%; height:30%; background:radial-gradient(circle at top, rgba(163,230,53,0.1), transparent);"></div>
+        
+        <h1 style="font-size: 3rem; margin-bottom: 0;">AERO<span style="color:var(--neon-green)">VARIO</span></h1>
+        <p style="color:var(--text-gray); letter-spacing: 2px; font-size: 0.8rem; margin-bottom: 40px;">PRO FLIGHT INSTRUMENT</p>
+
+        <button id="btn-start" class="start-btn">INICIAR VUELO</button>
+        <button id="btn-logs" class="secondary-btn">Historial de Vuelos</button>
+        
+        <div id="error-console" style="margin-top: 20px; color: red; font-size: 10px; max-width: 90%; white-space: pre-wrap;"></div>
+        <p style="position:absolute; bottom:20px; font-size:10px; color:#333;">v1.0 Vanilla JS - OLED Ready</p>
     </div>
-    <!-- CRITICAL FIX: Load the React App -->
-    <script type="module" src="./index.tsx"></script>
-  </body>
+
+    <!-- === HUD SCREEN === -->
+    <div id="screen-hud" class="hidden flex-col safe-area">
+        <!-- Alert -->
+        <div id="alert-overlay">⚠️ SINK ALARM</div>
+
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <button id="btn-settings" class="icon-btn">⚙️</button>
+            <div id="gps-status" style="color: #eab308;">GPS: Buscando...</div>
+            <button id="btn-mute" class="icon-btn">🔊</button>
+        </div>
+
+        <!-- Main Display -->
+        <div class="main-display">
+            <!-- Vario Bar -->
+            <div class="vario-container">
+                <div class="vario-center-line"></div>
+                <div id="vario-fill" class="vario-bar" style="height: 0; top: 50%;"></div>
+                <!-- Ticks generated by JS -->
+                <div id="ticks-container"></div>
+            </div>
+
+            <!-- Digital Vario -->
+            <div class="digital-vario-box">
+                <span style="color:#6b7280; font-size:0.8rem; position:absolute; top:10px;">VARIO m/s</span>
+                <span id="value-vario" class="font-mono">+0.0</span>
+            </div>
+        </div>
+
+        <!-- Info Grid -->
+        <div class="info-grid">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between;">
+                    <span class="label">Altitud (MSL)</span>
+                    <span id="reset-alt" style="font-size:12px; cursor:pointer;">🔄</span>
+                </div>
+                <div>
+                    <div id="value-alt" class="value font-mono">0</div>
+                    <div class="unit text-center">metros</div>
+                </div>
+                <div style="font-size:0.7rem; color:#666;">Rel: <span id="value-rel-alt">0</span>m</div>
+            </div>
+
+            <div class="card">
+                <span class="label">Velocidad (GS)</span>
+                <div>
+                    <div id="value-speed" class="value font-mono">0</div>
+                    <div class="unit text-center">km/h</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <span class="label">Planeo (L/D)</span>
+                <div>
+                    <div id="value-glide" class="value font-mono">--</div>
+                    <div class="unit text-center">ratio</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <span class="label">Tiempo Vuelo</span>
+                <div>
+                    <div id="value-time" class="value font-mono" style="font-size:1.5rem;">00:00</div>
+                </div>
+            </div>
+        </div>
+
+        <button id="btn-stop">Finalizar Vuelo</button>
+    </div>
+
+    <!-- === SETTINGS MODAL === -->
+    <div id="modal-settings" class="modal-overlay hidden">
+        <div class="modal-header">
+            <span class="modal-title">Configuración Alertas</span>
+            <button class="close-btn" onclick="toggleModal('modal-settings', false)">✕</button>
+        </div>
+        <div id="settings-content">
+            <!-- Generated by JS -->
+        </div>
+        <button onclick="saveSettingsAndClose()" class="start-btn w-full" style="margin-top:20px; font-size:1rem; padding:10px;">Guardar</button>
+    </div>
+
+    <!-- === LOGS MODAL === -->
+    <div id="modal-logs" class="modal-overlay hidden">
+        <div class="modal-header">
+            <span class="modal-title">Historial de Vuelos</span>
+            <button class="close-btn" onclick="toggleModal('modal-logs', false)">✕</button>
+        </div>
+        <div id="logs-list">
+            <!-- Generated by JS -->
+        </div>
+    </div>
+
+    <!-- === JAVASCRIPT LOGIC === -->
+    <script>
+        // --- 0. UTILS & ERROR HANDLING ---
+        const $ = (id) => document.getElementById(id);
+        window.onerror = function(msg, url, line) {
+            $('error-console').innerText += `\nERR: ${msg} (L${line})`;
+        };
+
+        // --- 1. CONFIG & STATE ---
+        const DEFAULT_SETTINGS = {
+            alerts: [
+                { id: 'low_alt', type: 'ALTITUDE_LOW', enabled: false, threshold: 1000, sound: 'beep' },
+                { id: 'sink_alarm', type: 'SINK_RATE', enabled: true, threshold: -2.5, duration: 2, sound: 'siren' }
+            ]
+        };
+
+        let appState = {
+            flying: false,
+            muted: false,
+            startTime: 0,
+            flightData: {
+                alt: 0,
+                vario: 0,
+                speed: 0,
+                glide: 0,
+                relAlt: 0
+            },
+            stats: {
+                maxAlt: -9999,
+                maxClimb: 0,
+                maxSink: 0,
+                points: 0
+            },
+            takeoffAlt: null,
+            settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS
+        };
+
+        // --- 2. KALMAN FILTER ---
+        class KalmanFilter {
+            constructor(R=1, Q=10) {
+                this.R = R; // Ruido del proceso
+                this.Q = Q; // Ruido de la medida (GPS)
+                this.x = NaN; // Valor estimado
+                this.p = NaN; // Covarianza del error
+            }
+            filter(measurement) {
+                if (isNaN(this.x)) {
+                    this.x = measurement;
+                    this.p = this.Q;
+                    return measurement;
+                }
+                // Predicción (Modelo estático simple)
+                let p_pred = this.p + this.R;
+                // Actualización
+                let k = p_pred / (p_pred + this.Q);
+                this.x = this.x + k * (measurement - this.x);
+                this.p = (1 - k) * p_pred;
+                return this.x;
+            }
+        }
+        const altFilter = new KalmanFilter(0.5, 15); // Ajustado para GPS
+
+        // --- 3. AUDIO ENGINE (Web Audio API) ---
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.osc = null;
+                this.gain = null;
+                this.beepTimer = null;
+                this.isBeeping = false;
+                this.isPlayingAlert = false;
+            }
+
+            init() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.connect(this.ctx.destination);
+            }
+
+            setMute(muted) {
+                if(!this.ctx) return;
+                this.masterGain.gain.setValueAtTime(muted ? 0 : 1, this.ctx.currentTime);
+            }
+
+            playTone(freq, type='sine', duration=0) {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.value = freq;
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                
+                gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + 0.05);
+                
+                osc.start();
+                
+                if (duration > 0) {
+                    gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + duration);
+                    osc.stop(this.ctx.currentTime + duration + 0.1);
+                }
+                return { osc, gain };
+            }
+
+            // Vario Logic
+            update(vario) {
+                if (appState.muted || this.isPlayingAlert) return;
+
+                // Sink Tone (Continuo)
+                if (vario < -2.0) {
+                    this.stopBeep();
+                    if (!this.osc) {
+                        const sound = this.playTone(200, 'sawtooth');
+                        this.osc = sound.osc;
+                        this.gain = sound.gain;
+                    }
+                    // Modulate pitch by sink rate
+                    if(this.osc) this.osc.frequency.value = Math.max(100, 300 + (vario * 50));
+                } 
+                // Climb Tone (Beeps)
+                else if (vario > 0.2) {
+                    if (this.osc) { this.osc.stop(); this.osc = null; } // Stop sink tone
+                    
+                    if (!this.isBeeping) {
+                        this.isBeeping = true;
+                        this.scheduleClimbBeep(vario);
+                    }
+                } 
+                // Silence (Deadband)
+                else {
+                    this.stopAll();
+                }
+            }
+
+            scheduleClimbBeep(vario) {
+                if (!this.isBeeping) return;
+                
+                // Physics: Higher lift = Higher pitch, faster cadence, shorter beep
+                const clampedVario = Math.min(vario, 8);
+                const pitch = 400 + (clampedVario * 100);
+                const period = Math.max(150, 600 - (clampedVario * 60)); // ms between start of beeps
+                const duration = period * 0.5; // 50% duty cycle
+
+                this.playTone(pitch, 'square', duration / 1000);
+
+                this.beepTimer = setTimeout(() => {
+                    this.scheduleClimbBeep(appState.flightData.vario);
+                }, period);
+            }
+
+            stopBeep() {
+                this.isBeeping = false;
+                if (this.beepTimer) clearTimeout(this.beepTimer);
+            }
+
+            stopAll() {
+                this.stopBeep();
+                if (this.osc) {
+                    try { this.osc.stop(); } catch(e){}
+                    this.osc = null;
+                }
+            }
+
+            playAlert(type) {
+                if(appState.muted) return;
+                this.stopAll();
+                this.isPlayingAlert = true;
+                
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                gain.connect(this.masterGain);
+                osc.connect(gain);
+
+                if (type === 'siren') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(600, now);
+                    osc.frequency.linearRampToValueAtTime(1200, now + 0.3);
+                    osc.frequency.linearRampToValueAtTime(600, now + 0.6);
+                    osc.start(now);
+                    osc.stop(now + 0.6);
+                } else if (type === 'beep') {
+                    osc.type = 'square';
+                    osc.frequency.value = 1500;
+                    gain.gain.setValueAtTime(0.5, now);
+                    gain.gain.setValueAtTime(0, now + 0.1);
+                    gain.gain.setValueAtTime(0.5, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else {
+                    // Whoop
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.exponentialRampToValueAtTime(1000, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                }
+
+                setTimeout(() => { this.isPlayingAlert = false; }, 700);
+            }
+        }
+        const audio = new AudioEngine();
+
+        // --- 4. FLIGHT COMPUTER ---
+        let watchId = null;
+        let lastTime = 0;
+        let altHistory = [];
+        let sinkStartTime = 0;
+        let lastAlertTime = 0;
+
+        function processFlightData(coords, timestamp) {
+            // 1. Filter Altitude
+            const rawAlt = coords.altitude || 0;
+            const filteredAlt = altFilter.filter(rawAlt);
+            
+            // 2. Calculate Vario (Regression over 2s)
+            altHistory.push({ t: timestamp, alt: filteredAlt });
+            // Keep last 2 seconds
+            altHistory = altHistory.filter(p => timestamp - p.t < 2000);
+            
+            let vario = 0;
+            if (altHistory.length >= 2) {
+                const first = altHistory[0];
+                const last = altHistory[altHistory.length - 1];
+                vario = (last.alt - first.alt) / ((last.t - first.t) / 1000);
+            }
+
+            // 3. Speed & Glide
+            const speedKmh = (coords.speed || 0) * 3.6;
+            let glide = 0;
+            if (vario < -0.5 && speedKmh > 5) {
+                glide = Math.abs((speedKmh / 3.6) / vario);
+            }
+
+            // 4. Update State
+            if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
+
+            appState.flightData = {
+                alt: Math.round(filteredAlt),
+                relAlt: Math.round(filteredAlt - appState.takeoffAlt),
+                vario: parseFloat(vario.toFixed(1)),
+                speed: Math.round(speedKmh),
+                glide: glide > 0 && glide < 50 ? glide.toFixed(1) : '--'
+            };
+
+            // 5. Stats Update
+            appState.stats.maxAlt = Math.max(appState.stats.maxAlt, appState.flightData.alt);
+            appState.stats.maxClimb = Math.max(appState.stats.maxClimb, vario);
+            appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
+            appState.stats.points++;
+
+            updateUI();
+            audio.update(vario);
+            checkAlerts(appState.flightData);
+        }
+
+        function checkAlerts(data) {
+            const now = Date.now();
+            // Prevent spamming alerts (max once every 3s)
+            if (now - lastAlertTime < 3000) return;
+
+            let activeAlert = null;
+
+            appState.settings.alerts.forEach(alert => {
+                if (!alert.enabled) return;
+
+                if (alert.type === 'ALTITUDE_LOW') {
+                    if (data.alt < alert.threshold && data.alt > 0) {
+                        activeAlert = `BAJA ALTITUD (${data.alt}m)`;
+                        audio.playAlert(alert.sound);
+                    }
+                }
+                else if (alert.type === 'SINK_RATE') {
+                    if (data.vario < alert.threshold) {
+                        if (sinkStartTime === 0) sinkStartTime = now;
+                        else if ((now - sinkStartTime) / 1000 > alert.duration) {
+                            activeAlert = `DESCENSO FUERTE (${data.vario}m/s)`;
+                            audio.playAlert(alert.sound);
+                        }
+                    } else {
+                        if (alert.type === 'SINK_RATE') sinkStartTime = 0;
+                    }
+                }
+            });
+
+            const overlay = $('alert-overlay');
+            if (activeAlert) {
+                overlay.innerText = "⚠️ " + activeAlert;
+                overlay.style.display = 'block';
+                lastAlertTime = now;
+                setTimeout(() => { overlay.style.display = 'none'; }, 2500);
+            }
+        }
+
+        // --- 5. UI MANAGEMENT ---
+        function updateUI() {
+            const d = appState.flightData;
+            
+            // Digital Values
+            $('value-vario').innerText = (d.vario > 0 ? '+' : '') + d.vario.toFixed(1);
+            $('value-vario').className = 'font-mono ' + (d.vario > 0.1 ? 'climbing' : (d.vario < -0.1 ? 'sinking' : 'text-white'));
+            
+            $('value-alt').innerText = d.alt;
+            $('value-rel-alt').innerText = d.relAlt;
+            $('value-speed').innerText = d.speed;
+            $('value-glide').innerText = d.glide;
+
+            // Flight Time
+            const seconds = Math.floor((Date.now() - appState.startTime) / 1000);
+            const m = Math.floor(seconds / 60).toString().padStart(2,'0');
+            const s = (seconds % 60).toString().padStart(2,'0');
+            $('value-time').innerText = `${m}:${s}`;
+
+            // Vario Bar
+            const maxVal = 5; // m/s range
+            const clamped = Math.max(-maxVal, Math.min(maxVal, d.vario));
+            const barEl = $('vario-fill');
+            
+            if (clamped > 0) {
+                // Climb: Bottom is 50%, Height grows up
+                const percent = (clamped / maxVal) * 50;
+                barEl.style.top = 'auto';
+                barEl.style.bottom = '50%';
+                barEl.style.height = percent + '%';
+                barEl.style.backgroundColor = 'var(--neon-green)';
+            } else {
+                // Sink: Top is 50%, Height grows down
+                const percent = (Math.abs(clamped) / maxVal) * 50;
+                barEl.style.bottom = 'auto';
+                barEl.style.top = '50%';
+                barEl.style.height = percent + '%';
+                barEl.style.backgroundColor = 'var(--neon-red)';
+            }
+        }
+
+        function toggleModal(id, show) {
+            const el = $(id);
+            if(show) {
+                if (id === 'modal-settings') renderSettings();
+                if (id === 'modal-logs') renderLogs();
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+
+        // --- 6. APP CONTROL & EVENT LISTENERS ---
+
+        $('btn-start').addEventListener('click', async () => {
+            // 1. Audio Context (Must happen on user gesture)
+            audio.init();
+            
+            // 2. iOS Permissions
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try { await DeviceOrientationEvent.requestPermission(); } catch(e) { console.log("Permission denied/error"); }
+            }
+
+            // 3. Start GPS
+            if ('geolocation' in navigator) {
+                $('screen-start').classList.add('hidden');
+                $('screen-hud').classList.remove('hidden');
+                $('screen-hud').classList.add('flex');
+                
+                appState.flying = true;
+                appState.startTime = Date.now();
+                appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, points: 0 };
+                
+                watchId = navigator.geolocation.watchPosition(
+                    (pos) => processFlightData(pos.coords, pos.timestamp),
+                    (err) => { $('gps-status').innerText = "GPS Error: " + err.message; $('gps-status').style.color = 'red'; },
+                    { enableHighAccuracy: true, maximumAge: 0 }
+                );
+                $('gps-status').innerText = "GPS: OK";
+                $('gps-status').style.color = 'var(--neon-green)';
+            } else {
+                alert("Geolocalización no soportada.");
+            }
+        });
+
+        $('btn-stop').addEventListener('click', () => {
+            if (confirm("¿Terminar vuelo y guardar?")) {
+                navigator.geolocation.clearWatch(watchId);
+                audio.stopAll();
+                
+                // Save Log
+                const duration = (Date.now() - appState.startTime) / 1000;
+                if (duration > 10) {
+                    const logs = JSON.parse(localStorage.getItem('av_logs')) || [];
+                    logs.push({
+                        id: Date.now(),
+                        date: appState.startTime,
+                        duration: duration,
+                        maxAlt: appState.stats.maxAlt,
+                        maxSink: appState.stats.maxSink
+                    });
+                    localStorage.setItem('av_logs', JSON.stringify(logs));
+                }
+
+                location.reload(); // Simple reset
+            }
+        });
+
+        $('btn-mute').addEventListener('click', () => {
+            appState.muted = !appState.muted;
+            audio.setMute(appState.muted);
+            $('btn-mute').innerText = appState.muted ? '🔇' : '🔊';
+            $('btn-mute').style.color = appState.muted ? 'gray' : 'white';
+        });
+
+        $('reset-alt').addEventListener('click', () => {
+            appState.takeoffAlt = appState.flightData.alt;
+        });
+
+        $('btn-settings').addEventListener('click', () => toggleModal('modal-settings', true));
+        $('btn-logs').addEventListener('click', () => toggleModal('modal-logs', true));
+
+        // --- 7. RENDER FUNCTIONS ---
+
+        function renderSettings() {
+            const container = $('settings-content');
+            container.innerHTML = '';
+            
+            appState.settings.alerts.forEach((alert, idx) => {
+                const div = document.createElement('div');
+                div.className = 'setting-group';
+                div.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                        <span style="font-weight:bold; color:white;">${alert.type === 'ALTITUDE_LOW' ? 'Alerta Altitud' : 'Alerta Descenso'}</span>
+                        <input type="checkbox" id="s_enable_${idx}" ${alert.enabled ? 'checked' : ''}>
+                    </div>
+                    <div class="input-row">
+                        <label>Umbral ${alert.type === 'SINK_RATE' ? '(m/s)' : '(m)'}</label>
+                        <input type="number" id="s_thresh_${idx}" value="${alert.threshold}">
+                    </div>
+                    <div class="input-row">
+                        <label>Sonido</label>
+                        <select id="s_sound_${idx}">
+                            <option value="siren" ${alert.sound === 'siren' ? 'selected' : ''}>Sirena</option>
+                            <option value="beep" ${alert.sound === 'beep' ? 'selected' : ''}>Beep</option>
+                            <option value="whoop" ${alert.sound === 'whoop' ? 'selected' : ''}>Whoop</option>
+                        </select>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function saveSettingsAndClose() {
+            const alerts = appState.settings.alerts.map((a, idx) => ({
+                ...a,
+                enabled: $(`s_enable_${idx}`).checked,
+                threshold: parseFloat($(`s_thresh_${idx}`).value),
+                sound: $(`s_sound_${idx}`).value
+            }));
+            appState.settings.alerts = alerts;
+            localStorage.setItem('av_settings', JSON.stringify(appState.settings));
+            toggleModal('modal-settings', false);
+        }
+
+        function renderLogs() {
+            const list = $('logs-list');
+            const logs = JSON.parse(localStorage.getItem('av_logs')) || [];
+            list.innerHTML = '';
+            
+            if(logs.length === 0) {
+                list.innerHTML = '<p class="text-center" style="color:gray; margin-top:20px;">Sin vuelos registrados</p>';
+                return;
+            }
+
+            logs.reverse().forEach(log => {
+                const date = new Date(log.date);
+                const m = Math.floor(log.duration / 60);
+                const s = Math.floor(log.duration % 60);
+                
+                const el = document.createElement('div');
+                el.className = 'log-item';
+                el.innerHTML = `
+                    <div class="log-date">${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                    <div class="log-stats">
+                        <span>⏱️ ${m}m ${s}s</span>
+                        <span>⬆️ Max ${log.maxAlt}m</span>
+                        <span style="color:#f87171">⬇️ ${log.maxSink.toFixed(1)}m/s</span>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        // --- 8. INITIALIZATION ---
+        // Create Ticks for Vario
+        for(let i=1; i<=4; i++) {
+            const topTick = document.createElement('div'); topTick.className = 'tick'; topTick.style.top = (50 - i*10) + '%';
+            const botTick = document.createElement('div'); botTick.className = 'tick'; botTick.style.top = (50 + i*10) + '%';
+            $('ticks-container').appendChild(topTick);
+            $('ticks-container').appendChild(botTick);
+        }
+
+    </script>
+</body>
 </html>

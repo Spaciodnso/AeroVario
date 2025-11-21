@@ -1,4 +1,4 @@
-import { LucideIcon, ArrowUp, ArrowDown, Navigation, Mountain, Activity } from 'lucide-react';
+import { ArrowUp, ArrowDown, Navigation, Mountain, Activity } from 'lucide-react';
 
 export const COLORS = {
   neonGreen: '#a3e635', // lime-400

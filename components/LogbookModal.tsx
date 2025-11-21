@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { FlightLog } from '../types';
 import { X, Calendar, Clock, ArrowUp, ArrowDown, Map } from 'lucide-react';
@@ -24,7 +25,7 @@ const LogbookModal: React.FC<Props> = ({ isOpen, onClose, logs }) => {
   const formatDuration = (secs: number) => {
     const hrs = Math.floor(secs / 3600);
     const mins = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
+    const s = Math.floor(secs % 60); // Ensure integer
     return `${hrs > 0 ? hrs + 'h ' : ''}${mins}m ${s}s`;
   };
 

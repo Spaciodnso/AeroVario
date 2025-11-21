@@ -182,16 +182,21 @@ const App: React.FC = () => {
 
     // 2. Request Permissions for iOS
     // We request BOTH Motion and Orientation to be safe, as iOS splits them.
+    // We must check if 'DeviceMotionEvent' exists (it doesn't on standard PC)
     try {
-        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-            const ps = await (DeviceMotionEvent as any).requestPermission();
+        // @ts-ignore
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            // @ts-ignore
+            const ps = await DeviceMotionEvent.requestPermission();
             if (ps !== 'granted') console.warn("Motion permission not granted");
         }
     } catch (e) { console.error("DeviceMotion Permission Error", e); }
 
     try {
-        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-            const ps = await (DeviceOrientationEvent as any).requestPermission();
+        // @ts-ignore
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+             // @ts-ignore
+            const ps = await DeviceOrientationEvent.requestPermission();
             if (ps !== 'granted') console.warn("Orientation permission not granted");
         }
     } catch (e) { console.error("DeviceOrientation Permission Error", e); }
