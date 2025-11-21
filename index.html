@@ -171,9 +171,63 @@
             border: 1px solid #374151;
             position: relative;
         }
-        #value-vario { font-size: 5rem; font-weight: 800; letter-spacing: -2px; }
+        #value-vario { font-size: 4.5rem; font-weight: 800; letter-spacing: -2px; line-height: 1; }
         .climbing { color: var(--neon-green); }
         .sinking { color: var(--neon-red); }
+
+        /* --- COMPASS STYLES --- */
+        .compass-ring {
+            width: 70px;
+            height: 70px;
+            border: 2px solid #374151;
+            border-radius: 50%;
+            position: relative;
+            margin-top: 15px;
+            background: radial-gradient(circle, #1f2937 20%, #000 100%);
+            box-shadow: inset 0 0 10px #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .compass-label {
+            position: absolute;
+            font-size: 10px;
+            font-weight: bold;
+            color: #4b5563;
+        }
+        .lbl-n { top: 3px; left: 50%; transform: translateX(-50%); color: var(--neon-red); }
+        .lbl-s { bottom: 3px; left: 50%; transform: translateX(-50%); }
+        .lbl-e { right: 4px; top: 50%; transform: translateY(-50%); }
+        .lbl-w { left: 4px; top: 50%; transform: translateY(-50%); }
+
+        .compass-arrow-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .compass-arrow {
+            width: 0; 
+            height: 0; 
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 35px solid var(--neon-green);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -100%); /* Adjust so bottom of arrow is at center */
+            transform-origin: 50% 100%; /* Rotate around bottom center */
+            filter: drop-shadow(0 0 5px rgba(163,230,53,0.5));
+        }
+        .compass-value-text {
+            position: absolute;
+            bottom: -15px;
+            font-size: 10px;
+            color: #6b7280;
+            font-family: monospace;
+        }
         
         /* Info Grid */
         .info-grid {
@@ -310,7 +364,7 @@
         <button id="btn-logs" class="secondary-btn">Historial de Vuelos</button>
         
         <div id="error-console" style="margin-top: 20px; color: red; font-size: 10px; max-width: 90%; white-space: pre-wrap;"></div>
-        <p style="position:absolute; bottom:20px; font-size:10px; color:#333;">v1.1 Vanilla - GPS Fix</p>
+        <p style="position:absolute; bottom:20px; font-size:10px; color:#333;">v1.2 Vanilla - Compass</p>
     </div>
 
     <!-- === HUD SCREEN === -->
@@ -336,10 +390,26 @@
                 <div id="ticks-container"></div>
             </div>
 
-            <!-- Digital Vario -->
+            <!-- Digital Vario & Compass -->
             <div class="digital-vario-box">
                 <span style="color:#6b7280; font-size:0.8rem; position:absolute; top:10px;">VARIO m/s</span>
+                
+                <!-- Vario Value -->
                 <span id="value-vario" class="font-mono">+0.0</span>
+                
+                <!-- Compass -->
+                <div class="compass-ring">
+                    <span class="compass-label lbl-n">N</span>
+                    <span class="compass-label lbl-e">E</span>
+                    <span class="compass-label lbl-s">S</span>
+                    <span class="compass-label lbl-w">W</span>
+                    
+                    <div id="compass-needle" class="compass-arrow-container">
+                        <div class="compass-arrow"></div>
+                    </div>
+                    
+                    <div id="compass-text" class="compass-value-text">0°</div>
+                </div>
             </div>
         </div>
 
@@ -432,7 +502,8 @@
                 vario: 0,
                 speed: 0,
                 glide: 0,
-                relAlt: 0
+                relAlt: 0,
+                heading: 0 // Compass heading
             },
             stats: {
                 maxAlt: -9999,
@@ -641,19 +712,25 @@
             if (vario < -0.5 && speedKmh > 5) {
                 glide = Math.abs((speedKmh / 3.6) / vario);
             }
+            
+            // 4. Heading (Compass)
+            const heading = coords.heading;
+            // Only update heading if available and moving, otherwise keep last
+            if (typeof heading === 'number' && !isNaN(heading)) {
+                appState.flightData.heading = heading;
+            }
 
-            // 4. Update State
+            // 5. Update State
             if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
 
-            appState.flightData = {
-                alt: Math.round(filteredAlt),
-                relAlt: Math.round(filteredAlt - appState.takeoffAlt),
-                vario: parseFloat(vario.toFixed(1)),
-                speed: Math.round(speedKmh),
-                glide: glide > 0 && glide < 50 ? glide.toFixed(1) : '--'
-            };
+            // Assign values
+            appState.flightData.alt = Math.round(filteredAlt);
+            appState.flightData.relAlt = Math.round(filteredAlt - appState.takeoffAlt);
+            appState.flightData.vario = parseFloat(vario.toFixed(1));
+            appState.flightData.speed = Math.round(speedKmh);
+            appState.flightData.glide = glide > 0 && glide < 50 ? glide.toFixed(1) : '--';
 
-            // 5. Stats Update
+            // 6. Stats Update
             appState.stats.maxAlt = Math.max(appState.stats.maxAlt, appState.flightData.alt);
             appState.stats.maxClimb = Math.max(appState.stats.maxClimb, vario);
             appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
@@ -720,6 +797,11 @@
             const m = Math.floor(seconds / 60).toString().padStart(2,'0');
             const s = (seconds % 60).toString().padStart(2,'0');
             $('value-time').innerText = `${m}:${s}`;
+
+            // Compass
+            const h = d.heading || 0;
+            $('compass-needle').style.transform = `rotate(${h}deg)`;
+            $('compass-text').innerText = Math.round(h) + '°';
 
             // Vario Bar
             const maxVal = 5; // m/s range
@@ -955,3 +1037,4 @@
     </script>
 </body>
 </html>
+    
