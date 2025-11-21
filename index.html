@@ -88,17 +88,23 @@
             align-items: center;
             justify-content: space-between;
             padding: 0 16px;
-            font-size: 0.8rem;
+            font-size: 0.7rem; /* Smaller font to fit both statuses */
             color: var(--text-gray);
             border-bottom: 1px solid #333;
             flex-shrink: 0;
         }
 
-        /* GPS Status */
-        #gps-status { padding: 5px 10px; border-radius: 4px; transition: color 0.3s; }
-        #gps-status.error-clickable {
+        .status-group {
+            display: flex;
+            gap: 10px;
+            font-weight: bold;
+        }
+
+        /* Status Badges */
+        .status-badge { padding: 4px 6px; border-radius: 4px; transition: color 0.3s; border: 1px solid transparent; }
+        .status-badge.error-clickable {
             background: rgba(239, 68, 68, 0.2);
-            border: 1px solid var(--neon-red);
+            border-color: var(--neon-red);
             animation: pulse-border 2s infinite;
             cursor: pointer;
         }
@@ -194,7 +200,7 @@
             width: 100%;
             height: 100%;
             top: 0; left: 0;
-            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.1s linear; /* Faster transition for compass */
         }
         .compass-arrow {
             width: 0; 
@@ -343,7 +349,10 @@
         <!-- Top Bar -->
         <div class="top-bar">
             <button id="btn-settings" class="icon-btn">⚙️</button>
-            <div id="gps-status" style="color: #eab308;">GPS: Inic...</div>
+            <div class="status-group">
+                <div id="gps-status" class="status-badge" style="color: #eab308;">GPS: Inic...</div>
+                <div id="compass-status" class="status-badge" style="color: #4b5563;">MAG: --</div>
+            </div>
             <button id="btn-mute" class="icon-btn">🔊</button>
         </div>
 
@@ -437,6 +446,7 @@
         let appState = {
             flying: false, muted: false, startTime: 0,
             flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0 },
+            sensors: { magHeading: null },
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0 },
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
@@ -615,9 +625,18 @@
             let glide = 0;
             if (vario < -0.5 && speedKmh > 5) glide = Math.abs((speedKmh/3.6)/vario);
             
-            if (coords.heading && !isNaN(coords.heading) && speedKmh > 3) {
-                appState.flightData.heading = coords.heading;
+            // HEADING LOGIC:
+            // If moving fast (>5km/h), GPS Heading is more accurate for "Track".
+            // If moving slow, use Magnetic Heading from sensors.
+            let finalHeading = 0;
+            if (speedKmh > 5 && coords.heading && !isNaN(coords.heading)) {
+                finalHeading = coords.heading;
+            } else if (appState.sensors.magHeading !== null) {
+                finalHeading = appState.sensors.magHeading;
+            } else if (coords.heading && !isNaN(coords.heading)) {
+                finalHeading = coords.heading; // Fallback
             }
+            appState.flightData.heading = finalHeading;
 
             if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
             appState.flightData.alt = Math.round(filteredAlt);
@@ -776,9 +795,20 @@
 
         function initFlightSystem() {
             audio.init();
+            
+            // 1. Request Motion/Orientation Permissions (iOS 13+)
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
-                 try{DeviceOrientationEvent.requestPermission();}catch(e){} 
+                 try {
+                     DeviceOrientationEvent.requestPermission().then(response => {
+                        if(response === 'granted') { startSensors(); }
+                        else { $('error-console').innerText += "\nPermiso Orientación Denegado"; }
+                     });
+                 } catch(e){ $('error-console').innerText += "\nErr Permiso: "+e; }
+            } else {
+                // Non-iOS or older devices
+                startSensors();
             }
+
             $('screen-start').classList.add('hidden');
             $('screen-hud').classList.remove('hidden'); $('screen-hud').classList.add('flex');
             appState.flying = true;
@@ -795,6 +825,26 @@
                     { enableHighAccuracy: true, maximumAge: 0 }
                 );
             }
+        }
+
+        function startSensors() {
+            window.addEventListener('deviceorientation', (e) => {
+                // iOS WebKit Compass
+                if (e.webkitCompassHeading) {
+                    appState.sensors.magHeading = e.webkitCompassHeading;
+                    const st = $('compass-status');
+                    if(st.innerText !== "MAG: OK") {
+                        st.innerText = "MAG: OK";
+                        st.style.color = 'var(--neon-green)';
+                    }
+                } 
+                // Android / Absolute Orientation
+                else if (e.alpha !== null) {
+                     // Simplified fallback for absolute orientation if available
+                     appState.sensors.magHeading = 360 - e.alpha; 
+                     $('compass-status').innerText = "MAG: OK";
+                }
+            });
         }
 
         $('btn-start').addEventListener('click', initFlightSystem);
