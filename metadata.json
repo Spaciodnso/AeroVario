@@ -1,0 +1,7 @@
+{
+  "name": "AeroVario Pro",
+  "description": "Professional Paragliding Variometer utilizing Sensor Fusion and GPS for iOS WebKit.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
