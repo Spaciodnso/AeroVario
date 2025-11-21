@@ -276,10 +276,30 @@
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px;
         }
-        .setting-group, .log-item {
+        .modal-title { font-size: 1.2rem; font-weight: bold; color: var(--neon-green); }
+        
+        /* SETTINGS STYLES */
+        .setting-group {
             background: #1f2937; padding: 15px; border-radius: 10px;
             margin-bottom: 10px; border: 1px solid #374151;
         }
+        .setting-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .setting-inputs { border-top: 1px solid #374151; padding-top: 10px; margin-top: 10px; }
+        .input-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+        .input-row label { font-size: 0.8rem; color: #9ca3af; }
+        
+        input[type="number"], select {
+            background: #000; color: white; border: 1px solid #4b5563;
+            padding: 6px; border-radius: 6px; width: 100px; text-align: right;
+        }
+
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4b5563; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--neon-green); }
+        input:checked + .slider:before { transform: translateX(16px); }
         
         #alert-overlay {
             position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
@@ -383,11 +403,13 @@
     <!-- === SETTINGS MODAL === -->
     <div id="modal-settings" class="modal-overlay hidden">
         <div class="modal-header">
-            <span class="modal-title" style="color:var(--neon-green)">Configuración</span>
+            <span class="modal-title">Configuración</span>
             <button class="icon-btn" onclick="toggleModal('modal-settings', false)">✕</button>
         </div>
-        <div id="settings-content"></div>
-        <button onclick="saveSettingsAndClose()" class="start-btn w-full" style="margin-top:20px; padding:10px;">Guardar</button>
+        <div id="settings-content">
+            <!-- Generated via JS -->
+        </div>
+        <button onclick="saveSettingsAndClose()" class="start-btn w-full" style="margin-top:20px; padding:10px;">Guardar y Cerrar</button>
     </div>
 
     <!-- === LOGS MODAL === -->
@@ -419,6 +441,70 @@
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
             trackHistory: [] // {lat, lon, vario, t}
+        };
+
+        // Ensure settings structure compatibility
+        if (!appState.settings.alerts) appState.settings = DEFAULT_SETTINGS;
+
+        // --- SETTINGS LOGIC ---
+        function renderSettings() {
+            const container = $('settings-content');
+            container.innerHTML = '';
+
+            appState.settings.alerts.forEach((alert) => {
+                const isLowAlt = alert.type === 'ALTITUDE_LOW';
+                const title = isLowAlt ? '⚠️ Baja Altitud' : '⬇️ Descenso Fuerte';
+                const color = alert.enabled ? 'var(--neon-green)' : '#666';
+                
+                const html = `
+                <div class="setting-group">
+                    <div class="setting-header">
+                        <span style="color:${color}; font-weight:bold;">${title}</span>
+                        <label class="switch">
+                            <input type="checkbox" ${alert.enabled ? 'checked' : ''} 
+                                onchange="updateSetting('${alert.id}', 'enabled', this.checked)">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    ${alert.enabled ? `
+                    <div class="setting-inputs">
+                        <div class="input-row">
+                            <label>Umbral (${isLowAlt ? 'm' : 'm/s'})</label>
+                            <input type="number" value="${alert.threshold}" step="${isLowAlt?10:0.1}"
+                                onchange="updateSetting('${alert.id}', 'threshold', parseFloat(this.value))">
+                        </div>
+                        ${!isLowAlt ? `
+                        <div class="input-row">
+                            <label>Duración (seg)</label>
+                            <input type="number" value="${alert.duration||2}" 
+                                onchange="updateSetting('${alert.id}', 'duration', parseFloat(this.value))">
+                        </div>` : ''}
+                        <div class="input-row">
+                            <label>Sonido</label>
+                            <select onchange="updateSetting('${alert.id}', 'sound', this.value)">
+                                <option value="siren" ${alert.sound==='siren'?'selected':''}>Sirena</option>
+                                <option value="beep" ${alert.sound==='beep'?'selected':''}>Beep</option>
+                                <option value="whoop" ${alert.sound==='whoop'?'selected':''}>Whoop</option>
+                                <option value="flatline" ${alert.sound==='flatline'?'selected':''}>Plano</option>
+                            </select>
+                        </div>
+                    </div>` : ''}
+                </div>`;
+                container.innerHTML += html;
+            });
+        }
+
+        window.updateSetting = (id, field, value) => {
+            const alert = appState.settings.alerts.find(a => a.id === id);
+            if (alert) {
+                alert[field] = value;
+                if (field === 'enabled') renderSettings(); // Re-render to show/hide inputs
+            }
+        };
+
+        window.saveSettingsAndClose = () => {
+            localStorage.setItem('av_settings', JSON.stringify(appState.settings));
+            toggleModal('modal-settings', false);
         };
 
         // --- THERMAL RADAR LOGIC ---
@@ -595,8 +681,31 @@
             stopAll() { this.stopBeep(); if(this.osc){try{this.osc.stop();}catch(e){} this.osc=null;} }
             playAlert(type) {
                 if(appState.muted) return; this.stopAll();
-                if(type==='siren') this.playTone(800, 'triangle', 0.6);
-                else this.playTone(1500, 'square', 0.3);
+                
+                if(type === 'beep') {
+                    // Double Beep pattern
+                    const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
+                    o.type='square'; o.frequency.value=1500; o.connect(g); g.connect(this.gain);
+                    const now = this.ctx.currentTime;
+                    g.gain.setValueAtTime(0.3, now); g.gain.setValueAtTime(0, now+0.1);
+                    g.gain.setValueAtTime(0.3, now+0.2); g.gain.setValueAtTime(0, now+0.3);
+                    o.start(now); o.stop(now+0.3);
+                } 
+                else if(type === 'whoop') {
+                    const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
+                    o.type='sine'; o.connect(g); g.connect(this.gain);
+                    const now = this.ctx.currentTime;
+                    o.frequency.setValueAtTime(300, now); o.frequency.exponentialRampToValueAtTime(1200, now+0.4);
+                    g.gain.setValueAtTime(0.5, now); g.gain.exponentialRampToValueAtTime(0.01, now+0.4);
+                    o.start(now); o.stop(now+0.4);
+                }
+                else if(type === 'flatline') {
+                    this.playTone(150, 'sawtooth', 0.8);
+                }
+                else {
+                    // Default Siren
+                    this.playTone(800, 'triangle', 0.6);
+                }
             }
         }
         const audio = new AudioEngine();
@@ -624,14 +733,45 @@
 
         function checkAlerts(data) {
             const now = Date.now();
-            if(now - lastAlertTime < 3000) return;
-            let msg = null;
+            
+            let activeAlert = null;
+            let soundToPlay = null;
+
             appState.settings.alerts.forEach(a => {
                 if(!a.enabled) return;
-                if(a.type === 'ALTITUDE_LOW' && data.alt < a.threshold && data.alt > 0) { msg='BAJA ALTITUD'; audio.playAlert(a.sound); }
-                if(a.type === 'SINK_RATE' && data.vario < a.threshold) msg='DESCENSO FUERTE';
+                
+                // Low Alt
+                if(a.type === 'ALTITUDE_LOW' && data.alt < a.threshold && data.alt > 0) { 
+                    // Only alert if we haven't recently
+                    if (now - lastAlertTime > 5000) {
+                        activeAlert='BAJA ALTITUD'; 
+                        soundToPlay = a.sound; 
+                    }
+                }
+                
+                // Sink Rate
+                if(a.type === 'SINK_RATE') {
+                    if (data.vario < a.threshold) {
+                         if (!sinkStartTime) sinkStartTime = now;
+                         else if ((now - sinkStartTime)/1000 > (a.duration || 2)) {
+                             if (now - lastAlertTime > 3000) {
+                                activeAlert='DESCENSO FUERTE';
+                                soundToPlay = a.sound;
+                             }
+                         }
+                    } else {
+                        if (data.vario > a.threshold) sinkStartTime = 0;
+                    }
+                }
             });
-            if(msg) { $('alert-overlay').innerText='⚠️ '+msg; $('alert-overlay').style.display='block'; lastAlertTime=now; setTimeout(()=>$('alert-overlay').style.display='none', 2500); }
+
+            if(activeAlert && soundToPlay) { 
+                $('alert-overlay').innerText='⚠️ '+activeAlert; 
+                $('alert-overlay').style.display='block'; 
+                audio.playAlert(soundToPlay);
+                lastAlertTime=now; 
+                setTimeout(()=>$('alert-overlay').style.display='none', 2500); 
+            }
         }
 
         function initFlightSystem() {
@@ -664,8 +804,7 @@
         
         function resetAlt() { appState.takeoffAlt = appState.flightData.alt; }
         function toggleModal(id, s) { $(id).className = s ? 'modal-overlay' : 'hidden'; if(s && id==='modal-settings') renderSettings(); }
-        function renderSettings() { $('settings-content').innerHTML = '<p style="color:gray">Ajustes de alertas disponibles en versión pro.</p>'; }
-
+        
         for(let i=1; i<=4; i++) { 
             $('ticks-container').innerHTML += `<div class="tick" style="top:${50-i*10}%"></div><div class="tick" style="top:${50+i*10}%"></div>`; 
         }
