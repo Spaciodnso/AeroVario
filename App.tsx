@@ -41,7 +41,6 @@ const App: React.FC = () => {
       try {
         const saved = localStorage.getItem('aero_alerts');
         if (saved) {
-            // Migration for old saved settings without sound
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed)) {
                 return parsed.map((a: any) => ({ ...a, sound: a.sound || 'siren' }));
@@ -168,6 +167,7 @@ const App: React.FC = () => {
   };
 
   const generateUUID = () => {
+    // Safe fallback for insecure contexts or older browsers
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
@@ -177,16 +177,26 @@ const App: React.FC = () => {
   const startFlight = async () => {
     setErrorMsg(null);
     
-    // Permission request wrapper
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      try {
-        const ps = await (DeviceMotionEvent as any).requestPermission();
-        if (ps !== 'granted') setErrorMsg("Motion denied. Vario lagging.");
-      } catch (e) { console.error(e); }
-    }
+    // 1. Initialize Audio Context first (needs user gesture)
+    try { await audioSynth.init(); } catch (e) { console.error("Audio Init Error", e); }
 
-    try { await audioSynth.init(); } catch (e) { console.error(e); }
+    // 2. Request Permissions for iOS
+    // We request BOTH Motion and Orientation to be safe, as iOS splits them.
+    try {
+        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+            const ps = await (DeviceMotionEvent as any).requestPermission();
+            if (ps !== 'granted') console.warn("Motion permission not granted");
+        }
+    } catch (e) { console.error("DeviceMotion Permission Error", e); }
 
+    try {
+        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+            const ps = await (DeviceOrientationEvent as any).requestPermission();
+            if (ps !== 'granted') console.warn("Orientation permission not granted");
+        }
+    } catch (e) { console.error("DeviceOrientation Permission Error", e); }
+
+    // 3. Start Sensors
     if ('geolocation' in navigator) {
       // Init Stats
       activeFlightStats.current = {
@@ -205,12 +215,15 @@ const App: React.FC = () => {
           newData.longitude = pos.coords.longitude;
           setData(newData);
         },
-        (err) => setErrorMsg("GPS Lost"),
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+        (err) => {
+            console.error("GPS Error", err);
+            setErrorMsg(`GPS Error: ${err.message}`);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
       setFlightState(FlightState.FLYING);
     } else {
-      setErrorMsg("No Geolocation support.");
+      setErrorMsg("Geolocation is not supported by this device.");
     }
   };
 
@@ -233,13 +246,13 @@ const App: React.FC = () => {
               id: generateUUID(),
               date: s.startTime,
               durationSeconds: duration,
-              maxAltitude: s.maxAltitude,
+              maxAltitude: s.maxAltitude === -9999 ? 0 : s.maxAltitude,
               maxClimb: s.maxClimb,
               maxSink: s.maxSink,
               distanceKm: dist 
           };
           
-          if (duration > 60) { // Only save flights longer than 1 min
+          if (duration > 10) { // Only save flights longer than 10s for testing
             setFlightLogs(prev => [...prev, newLog]);
           }
       }
@@ -283,6 +296,7 @@ const App: React.FC = () => {
             <p className="text-xs text-gray-600">
                 {flightLogs.length} flights recorded locally.
             </p>
+            {errorMsg && <p className="text-red-500 text-xs mt-4">{errorMsg}</p>}
         </div>
 
         <LogbookModal 
