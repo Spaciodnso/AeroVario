@@ -442,6 +442,7 @@
         let mapMarker = null;
         let mapPolyline = null;
         let currentView = 'radar'; // 'radar' or 'map'
+        let isMapCentered = false; // Controls initial zoom
 
         // --- VIEW SWITCHING ---
         window.switchView = (view) => {
@@ -463,6 +464,10 @@
                 setTimeout(() => {
                     if (mapInstance) {
                         mapInstance.invalidateSize();
+                        // If we have a position, center map
+                        if(appState.flightData.lat && appState.flightData.lon) {
+                             mapInstance.panTo([appState.flightData.lat, appState.flightData.lon]);
+                        }
                     }
                 }, 100);
             }
@@ -517,9 +522,14 @@
             // Add to Track
             mapPolyline.addLatLng(latLng);
 
-            // Center map only if view is map to save CPU
-            if (currentView === 'map') {
-                mapInstance.setView(latLng);
+            // SMART ZOOM & CENTERING LOGIC
+            if (!isMapCentered) {
+                // First Fix: Hard Zoom (Jump) to level 17
+                mapInstance.setView(latLng, 17);
+                isMapCentered = true;
+            } else if (currentView === 'map') {
+                // Continuous Tracking: Smooth Pan
+                mapInstance.panTo(latLng);
             }
         }
 
@@ -911,6 +921,7 @@
         function initFlightSystem() {
             audio.init();
             initMap(); // Initialize Leaflet
+            isMapCentered = false; // Reset zoom logic
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try {
