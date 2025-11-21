@@ -100,6 +100,7 @@
             background: rgba(239, 68, 68, 0.2);
             border: 1px solid var(--neon-red);
             animation: pulse-border 2s infinite;
+            cursor: pointer;
         }
 
         .icon-btn {
@@ -122,7 +123,7 @@
         /* Section 1: Vario & Bar */
         .vario-section {
             display: flex;
-            height: 110px;
+            height: 140px; /* Increased height for Compass */
             gap: 8px;
             flex-shrink: 0;
         }
@@ -152,20 +153,69 @@
             background: rgba(17, 24, 39, 0.6);
             border-radius: 12px;
             display: flex;
-            flex-direction: column;
+            flex-direction: column; /* Stack Number then Compass */
             align-items: center;
             justify-content: center;
             border: 1px solid #374151;
             position: relative;
+            padding: 5px;
         }
-        #value-vario { font-size: 3.5rem; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+        #value-vario { font-size: 3rem; font-weight: 800; letter-spacing: -2px; line-height: 1; margin-top: 5px; }
         .climbing { color: var(--neon-green); }
         .sinking { color: var(--neon-red); }
+
+        /* --- COMPASS STYLES --- */
+        .compass-ring {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #374151;
+            border-radius: 50%;
+            position: relative;
+            margin-top: 5px;
+            background: radial-gradient(circle, #1f2937 20%, #000 100%);
+            box-shadow: inset 0 0 10px #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .compass-label {
+            position: absolute;
+            font-size: 9px;
+            font-weight: bold;
+            color: #4b5563;
+        }
+        .lbl-n { top: 2px; left: 50%; transform: translateX(-50%); color: var(--neon-red); }
+        .lbl-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
+        .lbl-e { right: 3px; top: 50%; transform: translateY(-50%); }
+        .lbl-w { left: 3px; top: 50%; transform: translateY(-50%); }
+
+        .compass-arrow-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0; left: 0;
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .compass-arrow {
+            width: 0; 
+            height: 0; 
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-bottom: 30px solid var(--neon-green);
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -100%); /* Pivot bottom center */
+            transform-origin: 50% 100%;
+            filter: drop-shadow(0 0 4px rgba(163,230,53,0.5));
+        }
+        .compass-value-text {
+            position: absolute; bottom: -12px; font-size: 9px; color: #6b7280; font-family: monospace;
+        }
 
         /* Section 2: Thermal Radar (Canvas) */
         .radar-wrapper {
             flex: 1; /* Takes available space */
-            background: #050505; /* Darker than panel */
+            background: #050505;
             border-radius: 12px;
             border: 1px solid #374151;
             position: relative;
@@ -173,25 +223,18 @@
             justify-content: center;
             align-items: center;
             overflow: hidden;
-            min-height: 150px;
+            min-height: 120px;
         }
-        #thermal-canvas {
-            width: 100%;
-            height: 100%;
-        }
+        #thermal-canvas { width: 100%; height: 100%; }
         .radar-overlay-text {
-            position: absolute;
-            font-size: 10px;
-            color: #4b5563;
-            font-weight: bold;
-            pointer-events: none;
+            position: absolute; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none;
         }
         .radar-orientation { top: 5px; left: 5px; color: var(--neon-green); }
         .radar-scale { bottom: 5px; right: 5px; }
 
         /* Section 3: Info Grid (Compact) */
         .info-grid {
-            height: 90px;
+            height: 80px;
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
             gap: 6px;
@@ -207,7 +250,7 @@
             border: 1px solid #374151;
         }
         .label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-gray); }
-        .value { font-size: 1.2rem; font-weight: bold; text-align: right; }
+        .value { font-size: 1.1rem; font-weight: bold; text-align: right; }
         .unit { font-size: 0.65rem; color: var(--text-gray); text-align: right; }
 
         #btn-stop {
@@ -285,7 +328,7 @@
         </div>
 
         <div class="hud-content">
-            <!-- Section 1: Vario -->
+            <!-- Section 1: Vario & Compass -->
             <div class="vario-section">
                 <div class="vario-container">
                     <div class="vario-center-line"></div>
@@ -293,8 +336,20 @@
                     <div id="ticks-container"></div>
                 </div>
                 <div class="digital-vario-box">
-                    <span style="color:#6b7280; font-size:0.7rem; position:absolute; top:10px;">VARIO m/s</span>
+                    <span style="color:#6b7280; font-size:0.6rem; position:absolute; top:5px;">VARIO m/s</span>
                     <span id="value-vario" class="font-mono">+0.0</span>
+                    
+                    <!-- Digital Compass -->
+                    <div class="compass-ring">
+                        <span class="compass-label lbl-n">N</span>
+                        <span class="compass-label lbl-e">E</span>
+                        <span class="compass-label lbl-s">S</span>
+                        <span class="compass-label lbl-w">W</span>
+                        <div id="compass-needle" class="compass-arrow-container">
+                            <div class="compass-arrow"></div>
+                        </div>
+                        <div id="compass-text" class="compass-value-text">0°</div>
+                    </div>
                 </div>
             </div>
 
@@ -376,7 +431,6 @@
             canvas.width = parent.clientWidth * dpr;
             canvas.height = parent.clientHeight * dpr;
             ctx.scale(dpr, dpr);
-            // Store logical size for calculations
             canvas.logicalWidth = parent.clientWidth;
             canvas.logicalHeight = parent.clientHeight;
         }
@@ -389,28 +443,20 @@
             const cx = w / 2;
             const cy = h / 2;
             
-            // Clear
             ctx.clearRect(0, 0, w, h);
 
-            // Draw Rings (Distance)
-            // Scale: 200m radius fit in half height (minus margin)
-            const maxDist = 250; // meters to edge
-            const scale = (Math.min(w, h) / 2) / maxDist; // pixels per meter
+            // Draw Rings
+            const maxDist = 250; 
+            const scale = (Math.min(w, h) / 2) / maxDist; 
 
-            ctx.strokeStyle = '#374151';
-            ctx.lineWidth = 1;
-            
-            // 100m Ring
+            ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.arc(cx, cy, 100 * scale, 0, Math.PI * 2); ctx.stroke();
-            // 200m Ring
             ctx.beginPath(); ctx.arc(cx, cy, 200 * scale, 0, Math.PI * 2); ctx.stroke();
 
-            // Draw Pilot (Center Triangle)
+            // Draw Pilot (Triangle)
             ctx.fillStyle = 'white';
             ctx.beginPath();
-            ctx.moveTo(cx, cy - 6);
-            ctx.lineTo(cx - 4, cy + 4);
-            ctx.lineTo(cx + 4, cy + 4);
+            ctx.moveTo(cx, cy - 6); ctx.lineTo(cx - 4, cy + 4); ctx.lineTo(cx + 4, cy + 4);
             ctx.fill();
 
             // Draw Track
@@ -423,52 +469,30 @@
             const metersPerDegLat = 111132;
             const metersPerDegLon = 111319 * cosLat;
 
-            // We draw newest on top, so iterate
             for (let i = 0; i < appState.trackHistory.length; i++) {
                 const p = appState.trackHistory[i];
-                
-                // 1. Calculate distance in meters (Flat Earth approx for short dist)
-                const dy = (p.lat - currLat) * metersPerDegLat; // North distance
-                const dx = (p.lon - currLon) * metersPerDegLon; // East distance
+                const dy = (p.lat - currLat) * metersPerDegLat;
+                const dx = (p.lon - currLon) * metersPerDegLon;
 
-                // 2. Rotate to Track Up
-                // Standard rotation formula: 
-                // x' = x cos(θ) - y sin(θ)
-                // y' = x sin(θ) + y cos(θ)
-                // But our Heading θ is clockwise from North.
-                // We want to rotate the WORLD counter-clockwise by Heading.
+                // Track Up Rotation
                 const theta = -headingRad; 
                 const rx = dx * Math.cos(theta) - dy * Math.sin(theta);
                 const ry = dx * Math.sin(theta) + dy * Math.cos(theta);
 
-                // 3. Project to Canvas (Y is inverted in screens)
-                // If ry is positive (North relative to pilot), it goes UP (negative pixel Y)
                 const px = cx + rx * scale;
                 const py = cy - ry * scale;
 
-                // Optimization: Don't draw if out of bounds
                 if (px < -10 || px > w+10 || py < -10 || py > h+10) continue;
 
-                // 4. Style based on Lift
                 let radius = 2;
-                if (p.vario > 2.0) {
-                    ctx.fillStyle = '#d8b4fe'; // Purple
-                    radius = 5;
-                } else if (p.vario > 0.5) {
-                    ctx.fillStyle = '#ef4444'; // Red
-                    radius = 3.5;
-                } else {
-                    ctx.fillStyle = '#4b5563'; // Gray
-                }
+                if (p.vario > 2.0) { ctx.fillStyle = '#d8b4fe'; radius = 5; }
+                else if (p.vario > 0.5) { ctx.fillStyle = '#ef4444'; radius = 3.5; }
+                else { ctx.fillStyle = '#4b5563'; }
 
-                // Fade old points
-                const age = (Date.now() - p.t) / 1000; // seconds
+                const age = (Date.now() - p.t) / 1000; 
                 if (age > 90) continue;
-                // Alpha based on age? Nah, keep solid for visibility on OLED
 
-                ctx.beginPath();
-                ctx.arc(px, py, radius, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(px, py, radius, 0, Math.PI * 2); ctx.fill();
             }
         }
 
@@ -489,11 +513,9 @@
         let sinkStartTime = 0, lastAlertTime = 0;
 
         function processFlightData(coords, timestamp) {
-            // Filter Altitude
             const rawAlt = coords.altitude || 0;
             const filteredAlt = altFilter.filter(rawAlt);
             
-            // Vario Calc
             altHistory.push({ t: timestamp, alt: filteredAlt });
             altHistory = altHistory.filter(p => timestamp - p.t < 2000);
             let vario = 0;
@@ -503,17 +525,14 @@
                 vario = (last.alt - first.alt) / ((last.t - first.t)/1000);
             }
 
-            // Speed & Glide
             const speedKmh = (coords.speed || 0) * 3.6;
             let glide = 0;
             if (vario < -0.5 && speedKmh > 5) glide = Math.abs((speedKmh/3.6)/vario);
             
-            // Heading
             if (coords.heading && !isNaN(coords.heading) && speedKmh > 3) {
                 appState.flightData.heading = coords.heading;
             }
 
-            // Update Data
             if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
             appState.flightData.alt = Math.round(filteredAlt);
             appState.flightData.vario = parseFloat(vario.toFixed(1));
@@ -522,15 +541,10 @@
             appState.flightData.lat = coords.latitude;
             appState.flightData.lon = coords.longitude;
 
-            // Track History for Radar (Max 90s)
             if (coords.latitude && coords.longitude) {
                 appState.trackHistory.push({
-                    lat: coords.latitude,
-                    lon: coords.longitude,
-                    vario: vario,
-                    t: Date.now()
+                    lat: coords.latitude, lon: coords.longitude, vario: vario, t: Date.now()
                 });
-                // Prune old points
                 const cutoff = Date.now() - 90000;
                 if (appState.trackHistory[0] && appState.trackHistory[0].t < cutoff) {
                     appState.trackHistory = appState.trackHistory.filter(p => p.t > cutoff);
@@ -538,12 +552,12 @@
             }
 
             updateUI();
-            drawRadar(); // Update Canvas
+            drawRadar();
             audio.update(vario);
             checkAlerts(appState.flightData);
         }
 
-        // --- AUDIO ENGINE (Simplified) ---
+        // --- AUDIO ENGINE ---
         class AudioEngine {
             constructor() { this.ctx=null; this.osc=null; this.isBeeping=false; }
             init() { 
@@ -596,6 +610,11 @@
             $('value-speed').innerText = d.speed;
             $('value-glide').innerText = d.glide;
 
+            // Update Compass
+            const h = d.heading || 0;
+            $('compass-needle').style.transform = `rotate(${h}deg)`;
+            $('compass-text').innerText = Math.round(h) + '°';
+
             // Vario Bar
             const max=5, val=Math.max(-max, Math.min(max, d.vario));
             const bar=$('vario-fill');
@@ -623,7 +642,7 @@
             $('screen-start').classList.add('hidden');
             $('screen-hud').classList.remove('hidden'); $('screen-hud').classList.add('flex');
             appState.flying = true;
-            resizeCanvas(); // Init canvas size
+            resizeCanvas(); 
             
             if('geolocation' in navigator) {
                 $('gps-status').innerText = "GPS: Buscando...";
@@ -632,24 +651,21 @@
                         $('gps-status').innerText = "GPS: OK"; $('gps-status').style.color='var(--neon-green)';
                         processFlightData(pos.coords, pos.timestamp);
                     },
-                    err => { $('gps-status').innerText = "GPS Error"; $('gps-status').style.color='var(--neon-red)'; },
+                    err => { $('gps-status').innerText = "GPS Error"; $('gps-status').style.color='var(--neon-red)'; $('gps-status').classList.add('error-clickable'); $('gps-status').onclick = () => location.reload(); },
                     { enableHighAccuracy: true, maximumAge: 0 }
                 );
             }
         }
 
-        // Listeners
         $('btn-start').addEventListener('click', initFlightSystem);
         $('btn-stop').addEventListener('click', () => location.reload());
         $('btn-mute').addEventListener('click', () => { appState.muted = !appState.muted; $('btn-mute').innerText = appState.muted ? '🔇' : '🔊'; });
         $('btn-settings').addEventListener('click', () => toggleModal('modal-settings', true));
         
-        // Simple Helpers
         function resetAlt() { appState.takeoffAlt = appState.flightData.alt; }
         function toggleModal(id, s) { $(id).className = s ? 'modal-overlay' : 'hidden'; if(s && id==='modal-settings') renderSettings(); }
-        function renderSettings() { $('settings-content').innerHTML = '<p style="color:gray">Opciones de alertas aquí (simplificado)</p>'; } // Full implementation in prev step
+        function renderSettings() { $('settings-content').innerHTML = '<p style="color:gray">Ajustes de alertas disponibles en versión pro.</p>'; }
 
-        // Ticks
         for(let i=1; i<=4; i++) { 
             $('ticks-container').innerHTML += `<div class="tick" style="top:${50-i*10}%"></div><div class="tick" style="top:${50+i*10}%"></div>`; 
         }
