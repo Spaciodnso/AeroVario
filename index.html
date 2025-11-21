@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AeroVario Pro (Vanilla)</title>
     
-    <!-- LEAFLET CSS -->
+    <!-- 1. LEAFLET CSS (FIRST) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
     <style>
@@ -121,8 +121,8 @@
             overflow: hidden;
         }
 
-        /* Section 1: Vario & Bar */
-        .vario-section { display: flex; height: 140px; gap: 8px; flex-shrink: 0; }
+        /* Section 1: Vario & Bar (Top 30-40%) */
+        .vario-section { display: flex; height: 130px; gap: 8px; flex-shrink: 0; }
 
         /* Vario Bar */
         .vario-container {
@@ -168,7 +168,7 @@
 
         /* --- VIEW SWITCHER (TABS) --- */
         .view-switcher {
-            display: flex; gap: 4px; margin-bottom: 0; flex-shrink: 0;
+            display: flex; gap: 4px; margin-bottom: 0; flex-shrink: 0; height: 30px;
         }
         .view-tab {
             flex: 1; background: #111827; border: 1px solid #374151; border-bottom: none;
@@ -179,11 +179,16 @@
             background: #050505; color: var(--neon-green); border-color: var(--neon-green); border-bottom: 1px solid #050505;
         }
 
-        /* --- VISUALIZATION AREA (Stack) --- */
+        /* --- VISUALIZATION AREA (MAP/RADAR) - CRITICAL FIXES --- */
         .vis-container {
-            flex: 1; position: relative; border: 1px solid #374151; 
-            border-top: 1px solid var(--neon-green); /* Highlight active tab connection */
-            background: #050505; border-radius: 0 0 12px 12px; overflow: hidden; min-height: 150px;
+            flex: 2; /* Take more vertical space (50% approx) */
+            position: relative; 
+            border: 1px solid #374151; 
+            border-top: 1px solid var(--neon-green);
+            background: #000; 
+            border-radius: 0 0 12px 12px; 
+            overflow: hidden; 
+            min-height: 40vh; /* FORCE HEIGHT FOR IPHONE */
         }
 
         /* Thermal Radar */
@@ -196,20 +201,35 @@
         .radar-orientation { top: 5px; left: 5px; color: var(--neon-green); }
         .radar-scale { bottom: 5px; right: 5px; }
 
-        /* Leaflet Map */
+        /* Leaflet Map Container */
         #map-wrapper {
-            width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 10;
+            width: 100%; 
+            height: 100%; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 10;
             display: none; /* Hidden by default */
         }
-        #map { width: 100%; height: 100%; background: #222; }
+        
+        #map { 
+            width: 100%; 
+            height: 100%; 
+            background: #111; 
+            border: 2px solid white; /* DEBUGGING BORDER - REMOVE LATER IF NEEDED */
+            box-sizing: border-box;
+            z-index: 1;
+        }
+        
         /* Dark Mode Map Filter */
         .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
-        /* Fix markers not being inverted */
         .leaflet-marker-icon { filter: none; }
+        .leaflet-control-container .leaflet-top { top: 10px; }
+        .leaflet-control-container .leaflet-bottom { bottom: 10px; }
 
         /* Info Grid */
         .info-grid {
-            height: 80px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; flex-shrink: 0;
+            height: 70px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; flex-shrink: 0;
         }
         .card {
             background: var(--panel-bg); border-radius: 8px; padding: 6px;
@@ -228,7 +248,7 @@
         /* --- MODALS --- */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 1000; /* High Z to cover map */
+            background: rgba(0,0,0,0.95); z-index: 2000; /* Higher than map */
             display: flex; flex-direction: column; padding: 20px; overflow-y: auto;
         }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
@@ -269,7 +289,7 @@
         .safe-area { padding-bottom: env(safe-area-inset-bottom); }
     </style>
     
-    <!-- LEAFLET JS -->
+    <!-- 2. LEAFLET JS (SECOND) -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="importmap">
 {
@@ -350,7 +370,7 @@
                 </div>
 
                 <!-- Leaflet Map -->
-                <div id="view-map" id="map-wrapper">
+                <div id="map-wrapper">
                     <div id="map"></div>
                 </div>
             </div>
@@ -434,12 +454,17 @@
             // Update Containers
             if (view === 'radar') {
                 $('view-radar').style.display = 'flex';
-                $('view-map').style.display = 'none';
+                $('map-wrapper').style.display = 'none';
             } else {
                 $('view-radar').style.display = 'none';
-                $('view-map').style.display = 'block';
-                // Important: fix Leaflet sizing when unhiding
-                if (mapInstance) mapInstance.invalidateSize();
+                $('map-wrapper').style.display = 'block';
+                
+                // CRITICAL FIX: Invalidate Size when showing map
+                setTimeout(() => {
+                    if (mapInstance) {
+                        mapInstance.invalidateSize();
+                    }
+                }, 100);
             }
         };
 
@@ -474,6 +499,11 @@
                 weight: 4,
                 opacity: 0.8
             }).addTo(mapInstance);
+
+            // CRITICAL FIX: Force resize calculation after init
+            setTimeout(() => {
+                mapInstance.invalidateSize();
+            }, 500);
         }
 
         function updateMap(lat, lon) {
@@ -487,8 +517,7 @@
             // Add to Track
             mapPolyline.addLatLng(latLng);
 
-            // Center map (only if user hasn't dragged significantly? For now always center)
-            // Or center only if view is 'map' to save CPU
+            // Center map only if view is map to save CPU
             if (currentView === 'map') {
                 mapInstance.setView(latLng);
             }
