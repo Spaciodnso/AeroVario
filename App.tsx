@@ -35,19 +35,36 @@ const App: React.FC = () => {
   // Features State
   const [showSettings, setShowSettings] = useState(false);
   const [showLogbook, setShowLogbook] = useState(false);
+  
+  // Safe Alert Initialization
   const [alerts, setAlerts] = useState<AlertConfig[]>(() => {
-      const saved = localStorage.getItem('aero_alerts');
-      if (saved) {
-        // Migration for old saved settings without sound
-        const parsed = JSON.parse(saved);
-        return parsed.map((a: any) => ({ ...a, sound: a.sound || 'siren' }));
+      try {
+        const saved = localStorage.getItem('aero_alerts');
+        if (saved) {
+            // Migration for old saved settings without sound
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+                return parsed.map((a: any) => ({ ...a, sound: a.sound || 'siren' }));
+            }
+        }
+      } catch (e) {
+          console.error("Error loading alerts config", e);
       }
       return DEFAULT_ALERTS;
   });
+
+  // Safe Logs Initialization
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>(() => {
-      const saved = localStorage.getItem('aero_flight_logs');
-      return saved ? JSON.parse(saved) : [];
+      try {
+        const saved = localStorage.getItem('aero_flight_logs');
+        const parsed = saved ? JSON.parse(saved) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+          console.error("Error loading logs", e);
+          return [];
+      }
   });
+
   const [activeAlertMsg, setActiveAlertMsg] = useState<string | null>(null);
 
   // --- Refs for Logic ---
@@ -150,6 +167,13 @@ const App: React.FC = () => {
       }
   };
 
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  };
+
   const startFlight = async () => {
     setErrorMsg(null);
     
@@ -206,7 +230,7 @@ const App: React.FC = () => {
           const dist = s.positions.length > 1 ? s.positions.length * 0.05 : 0; 
 
           const newLog: FlightLog = {
-              id: crypto.randomUUID(),
+              id: generateUUID(),
               date: s.startTime,
               durationSeconds: duration,
               maxAltitude: s.maxAltitude,
