@@ -280,6 +280,26 @@
             background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7; padding: 4px;
         }
         .btn-delete-log:hover { opacity: 1; transform: scale(1.1); }
+
+        .btn-delete-all {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--neon-red);
+            color: var(--neon-red);
+            padding: 10px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+        .btn-delete-all:active {
+            transform: scale(0.98);
+            background: var(--neon-red);
+            color: black;
+        }
         
         #alert-overlay {
             position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
@@ -612,8 +632,7 @@
                 return;
             }
 
-            // We iterate in reverse to show newest first, but we need to track the ID or timestamp for deletion.
-            // Assuming log.date is unique timestamp.
+            // We iterate in reverse to show newest first
             logs.sort((a,b) => b.date - a.date).forEach(log => {
                 const date = new Date(log.date).toLocaleString();
                 const duration = Math.floor(log.durationSeconds / 60) + 'm ' + Math.floor(log.durationSeconds % 60) + 's';
@@ -634,6 +653,13 @@
                 </div>`;
                 container.innerHTML += html;
             });
+
+            // ADD BULK DELETE BUTTON
+            container.innerHTML += `
+                <button class="btn-delete-all" onclick="deleteAllLogs()">
+                    ⚠️ Borrar Todo el Historial
+                </button>
+            `;
         }
         
         window.deleteLog = (timestamp) => {
@@ -642,6 +668,13 @@
                 logs = logs.filter(l => l.date !== timestamp);
                 localStorage.setItem('av_logs', JSON.stringify(logs));
                 renderLogs(); // Re-render immediately
+            }
+        };
+
+        window.deleteAllLogs = () => {
+            if(confirm("¡ATENCIÓN! ¿Estás seguro de que deseas eliminar TODOS los vuelos registrados? Esta acción no se puede deshacer.")) {
+                localStorage.removeItem('av_logs');
+                renderLogs();
             }
         };
 
