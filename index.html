@@ -324,6 +324,7 @@
             <button id="btn-settings" class="icon-btn">⚙️</button>
             <div class="status-group">
                 <div id="gps-status" class="status-badge" style="color: #eab308;">GPS: Inic...</div>
+                <div id="sat-status" class="status-badge" style="color: #4b5563;">SAT: --</div>
                 <div id="compass-status" class="status-badge" style="color: #4b5563;">MAG: --</div>
             </div>
             <button id="btn-mute" class="icon-btn">🔊</button>
@@ -950,6 +951,17 @@
                 navigator.geolocation.watchPosition(
                     pos => {
                         $('gps-status').innerText = "GPS: OK"; $('gps-status').style.color='var(--neon-green)';
+                        
+                        // --- SAT & ACCURACY ESTIMATION ---
+                        // iOS/Web doesn't provide sat count. We estimate based on accuracy.
+                        // <5m = ~12 sats, <10m = ~9 sats, <20m = ~6 sats, else 4
+                        const acc = pos.coords.accuracy || 50;
+                        const sats = acc <= 5 ? 12 : (acc <= 10 ? 10 : (acc <= 20 ? 7 : 4));
+                        const satEl = $('sat-status');
+                        satEl.innerText = `SAT: ${sats}`;
+                        satEl.style.color = sats >= 10 ? 'var(--neon-green)' : (sats >= 7 ? '#eab308' : 'var(--text-gray)');
+                        // ---------------------------------
+
                         processFlightData(pos.coords, pos.timestamp);
                     },
                     err => { $('gps-status').innerText = "GPS Error"; $('gps-status').style.color='var(--neon-red)'; $('gps-status').classList.add('error-clickable'); $('gps-status').onclick = () => location.reload(); },
