@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -522,6 +521,36 @@
             altHistory: [], // For Graph (Last 120 points)
             startLocation: null // New: To store reverse geocoded name
         };
+
+        // --- WAKE LOCK MANAGER ---
+        let wakeLock = null;
+
+        async function manageWakeLock(shouldLock) {
+            if (!('wakeLock' in navigator)) return;
+
+            try {
+                if (shouldLock && !wakeLock) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    // console.log('WakeLock Active');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                        // console.log('WakeLock Released');
+                    });
+                } else if (!shouldLock && wakeLock) {
+                    await wakeLock.release();
+                    wakeLock = null;
+                }
+            } catch (err) {
+                console.warn('WakeLock Error:', err);
+            }
+        }
+
+        // Auto-Reacquire on Visibility Change
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible' && appState.flying) {
+                await manageWakeLock(true);
+            }
+        });
 
         // --- MAP & VIEW VARIABLES ---
         let mapInstance = null;
@@ -1331,6 +1360,9 @@
             audio.init();
             initMap(); // Initialize Leaflet
             isMapCentered = false; // Reset zoom logic
+
+            // Start Wake Lock
+            manageWakeLock(true);
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try {
