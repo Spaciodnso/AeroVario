@@ -519,7 +519,8 @@
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
             trackHistory: [], // For Radar (Short term)
             fullTrack: [],     // For Flight Log (Complete History)
-            altHistory: [] // For Graph (Last 120 points)
+            altHistory: [], // For Graph (Last 120 points)
+            startLocation: null // New: To store reverse geocoded name
         };
 
         // --- MAP & VIEW VARIABLES ---
@@ -695,6 +696,26 @@
             return R * c;
         }
 
+        // --- GEOCODING UTIL ---
+        async function fetchLocationName(lat, lon) {
+            try {
+                // Use OpenStreetMap Nominatim
+                // Zoom 12 captures village/town/city level
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);
+                if(!res.ok) throw new Error("Net Err");
+                const data = await res.json();
+                
+                // Prioritize readable names
+                const a = data.address;
+                if(a) {
+                     return a.village || a.town || a.city || a.hamlet || a.mountain_pass || a.county || "Zona de Vuelo";
+                }
+                return data.display_name ? data.display_name.split(',')[0] : `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+            } catch(e) {
+                return `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+            }
+        }
+
         // --- LOGS LOGIC ---
         function renderLogs() {
             const container = $('logs-list');
@@ -723,12 +744,18 @@
                 const gain = log.gain.toFixed(0);
 
                 const hasRoute = log.route && log.route.length > 0;
+                
+                // Location display
+                const locDisplay = log.location ? `📍 ${log.location}` : '';
 
                 const html = `
                 <div class="log-item">
                     <div class="log-summary" onclick="toggleLogDetails(${index})">
                         <div>
-                            <div class="log-date">${dateStr} <span style="font-weight:normal; font-size:0.8em; color:#666">${timeStr}</span></div>
+                            <div class="log-date">
+                                ${dateStr} <span style="font-weight:normal; font-size:0.8em; color:#666">${timeStr}</span>
+                                ${locDisplay ? `<div style="font-size:0.75rem; color:var(--neon-green); margin-top:2px;">${locDisplay}</div>` : ''}
+                            </div>
                             <div class="log-basic-stats">
                                 <span>⏱️ ${durationFmt}</span>
                                 <span>📏 ${distKm} km</span>
@@ -913,6 +940,7 @@
                     gain: Math.max(0, gain), // Net gain
                     maxClimb: appState.stats.maxClimb.toFixed(1),
                     maxSink: appState.stats.maxSink.toFixed(1),
+                    location: appState.startLocation || "Desconocido", // New Location Field
                     // Route optimization: Save raw for now, simplified to 4 decimals
                     route: appState.fullTrack.map(p => ({
                         lat: parseFloat(p.lat.toFixed(5)),
@@ -1322,6 +1350,7 @@
             appState.takeoffAlt = null;
             appState.fullTrack = []; // Reset tracklog
             appState.altHistory = []; // Reset Graph
+            appState.startLocation = null; // Reset location
             
             resizeCanvas(); 
             // Initial view switch ensures sizes are correct
@@ -1334,14 +1363,18 @@
                         $('gps-status').innerText = "GPS: OK"; $('gps-status').style.color='var(--neon-green)';
                         
                         // --- SAT & ACCURACY ESTIMATION ---
-                        // iOS/Web doesn't provide sat count. We estimate based on accuracy.
-                        // <5m = ~12 sats, <10m = ~9 sats, <20m = ~6 sats, else 4
                         const acc = pos.coords.accuracy || 50;
                         const sats = acc <= 5 ? 12 : (acc <= 10 ? 10 : (acc <= 20 ? 7 : 4));
                         const satEl = $('sat-status');
                         satEl.innerText = `SAT: ${sats}`;
                         satEl.style.color = sats >= 10 ? 'var(--neon-green)' : (sats >= 7 ? '#eab308' : 'var(--text-gray)');
-                        // ---------------------------------
+                        
+                        // --- REVERSE GEOCODING (ONCE) ---
+                        if (!appState.startLocation && acc < 100) {
+                            appState.startLocation = "Obteniendo..."; // Prevent multi-calls
+                            fetchLocationName(pos.coords.latitude, pos.coords.longitude)
+                                .then(loc => appState.startLocation = loc);
+                        }
 
                         processFlightData(pos.coords, pos.timestamp);
                     },
