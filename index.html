@@ -179,7 +179,7 @@
             background: #050505; color: var(--neon-green); border-color: var(--neon-green); border-bottom: 1px solid #050505;
         }
 
-        /* --- VISUALIZATION AREA (MAP/RADAR) - CRITICAL FIXES --- */
+        /* --- VISUALIZATION AREA (MAP/RADAR) --- */
         .vis-container {
             flex: 2; /* Take more vertical space (50% approx) */
             position: relative; 
@@ -272,9 +272,14 @@
         input:checked + .slider:before { transform: translateX(16px); }
         
         /* LOG STYLES */
-        .log-item { background: #1f2937; border: 1px solid #374151; padding: 12px; border-radius: 10px; margin-bottom: 10px; }
-        .log-date { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 4px; }
+        .log-item { background: #1f2937; border: 1px solid #374151; padding: 12px; border-radius: 10px; margin-bottom: 10px; position: relative; }
+        .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; border-bottom: 1px solid #374151; padding-bottom: 4px; }
+        .log-date { color: white; font-weight: bold; font-size: 0.9rem; }
         .log-detail { font-size: 0.8rem; color: #9ca3af; display: flex; justify-content: space-between; }
+        .btn-delete-log {
+            background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7; padding: 4px;
+        }
+        .btn-delete-log:hover { opacity: 1; transform: scale(1.1); }
         
         #alert-overlay {
             position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
@@ -607,12 +612,17 @@
                 return;
             }
 
-            logs.reverse().forEach(log => {
+            // We iterate in reverse to show newest first, but we need to track the ID or timestamp for deletion.
+            // Assuming log.date is unique timestamp.
+            logs.sort((a,b) => b.date - a.date).forEach(log => {
                 const date = new Date(log.date).toLocaleString();
                 const duration = Math.floor(log.durationSeconds / 60) + 'm ' + Math.floor(log.durationSeconds % 60) + 's';
                 const html = `
                 <div class="log-item">
-                    <div class="log-date">${date}</div>
+                    <div class="log-header">
+                        <div class="log-date">${date}</div>
+                        <button class="btn-delete-log" onclick="deleteLog(${log.date})">🗑️</button>
+                    </div>
                     <div class="log-detail">
                         <span>⏱️ ${duration}</span>
                         <span>📈 Max ${log.maxAlt}m</span>
@@ -625,6 +635,15 @@
                 container.innerHTML += html;
             });
         }
+        
+        window.deleteLog = (timestamp) => {
+            if(confirm("¿Estás seguro de que deseas eliminar este registro de vuelo? Esta acción no se puede deshacer.")) {
+                let logs = JSON.parse(localStorage.getItem('av_logs') || '[]');
+                logs = logs.filter(l => l.date !== timestamp);
+                localStorage.setItem('av_logs', JSON.stringify(logs));
+                renderLogs(); // Re-render immediately
+            }
+        };
 
         function endFlight() {
             if (!appState.flying) return;
