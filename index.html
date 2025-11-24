@@ -271,35 +271,40 @@
         input:checked + .slider { background-color: var(--neon-green); }
         input:checked + .slider:before { transform: translateX(16px); }
         
-        /* LOG STYLES */
-        .log-item { background: #1f2937; border: 1px solid #374151; padding: 12px; border-radius: 10px; margin-bottom: 10px; position: relative; }
-        .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; border-bottom: 1px solid #374151; padding-bottom: 4px; }
-        .log-date { color: white; font-weight: bold; font-size: 0.9rem; }
-        .log-detail { font-size: 0.8rem; color: #9ca3af; display: flex; justify-content: space-between; }
-        .btn-delete-log {
-            background: none; border: none; font-size: 1.1rem; cursor: pointer; opacity: 0.7; padding: 4px;
+        /* LOG STYLES - ADVANCED */
+        .log-item { background: #1f2937; border: 1px solid #374151; border-radius: 10px; margin-bottom: 12px; overflow: hidden; transition: all 0.2s; }
+        .log-summary { 
+            padding: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+            background: linear-gradient(90deg, #1f2937 0%, #111827 100%);
         }
-        .btn-delete-log:hover { opacity: 1; transform: scale(1.1); }
+        .log-summary:active { background: #374151; }
+        
+        .log-date { color: white; font-weight: bold; font-size: 0.95rem; }
+        .log-basic-stats { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; display: flex; gap: 10px; }
+        
+        .log-details { 
+            padding: 0 12px 12px 12px; background: #111; border-top: 1px solid #374151; 
+            display: none; animation: slideDown 0.2s ease-out;
+        }
+        .log-details.open { display: block; }
+        
+        .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .detail-box { background: #1f2937; padding: 8px; border-radius: 6px; border: 1px solid #374151; }
+        .d-label { font-size: 0.6rem; text-transform: uppercase; color: #6b7280; }
+        .d-val { font-size: 0.9rem; font-weight: bold; color: #f3f4f6; font-family: monospace; }
+        .d-unit { font-size: 0.7rem; color: #6b7280; }
+        
+        .btn-delete-log {
+            background: none; border: none; font-size: 1.2rem; cursor: pointer; opacity: 0.7; padding: 8px; color: #ef4444;
+        }
 
         .btn-delete-all {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid var(--neon-red);
-            color: var(--neon-red);
-            padding: 10px;
-            width: 100%;
-            border-radius: 8px;
-            margin-top: 20px;
-            cursor: pointer;
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 0.8rem;
-            transition: all 0.2s;
+            background: rgba(239, 68, 68, 0.1); border: 1px solid #7f1d1d; color: #ef4444;
+            padding: 12px; width: 100%; border-radius: 8px; margin-top: 20px;
+            cursor: pointer; font-weight: bold; text-transform: uppercase; font-size: 0.8rem;
         }
-        .btn-delete-all:active {
-            transform: scale(0.98);
-            background: var(--neon-red);
-            color: black;
-        }
+
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         
         #alert-overlay {
             position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
@@ -435,7 +440,7 @@
     <!-- === LOGS MODAL === -->
     <div id="modal-logs" class="modal-overlay hidden">
         <div class="modal-header">
-            <span class="modal-title">Historial</span>
+            <span class="modal-title">Historial de Vuelos</span>
             <button class="icon-btn" onclick="toggleModal('modal-logs', false)">✕</button>
         </div>
         <div id="logs-list" class="w-full"></div>
@@ -458,10 +463,11 @@
             flying: false, muted: false, startTime: 0,
             flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0 },
             sensors: { magHeading: null },
-            stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0 },
+            stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 },
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
-            trackHistory: [] 
+            trackHistory: [], // For Radar (Short term)
+            fullTrack: []     // For Flight Log (Complete History)
         };
 
         // --- MAP & VIEW VARIABLES ---
@@ -621,40 +627,100 @@
             toggleModal('modal-settings', false);
         };
 
+        // --- MATH UTILS ---
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // metres
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
         // --- LOGS LOGIC ---
         function renderLogs() {
             const container = $('logs-list');
             container.innerHTML = '';
-            const logs = JSON.parse(localStorage.getItem('av_logs') || '[]');
+            // Load from new key 'glider_flight_history'
+            const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
             
             if(logs.length === 0) {
                 container.innerHTML = '<div style="text-align:center; color:#666; margin-top:20px;">No hay vuelos registrados</div>';
                 return;
             }
 
-            // We iterate in reverse to show newest first
-            logs.sort((a,b) => b.date - a.date).forEach(log => {
-                const date = new Date(log.date).toLocaleString();
-                const duration = Math.floor(log.durationSeconds / 60) + 'm ' + Math.floor(log.durationSeconds % 60) + 's';
+            // Reverse order
+            logs.sort((a,b) => b.startTime - a.startTime).forEach((log, index) => {
+                const dateObj = new Date(log.startTime);
+                const dateStr = dateObj.toLocaleDateString();
+                const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                // Format Metrics
+                const durH = Math.floor(log.totalTime / 3600);
+                const durM = Math.floor((log.totalTime % 3600) / 60);
+                const durS = Math.floor(log.totalTime % 60);
+                const durationFmt = `${durH>0?durH+'h ':''}${durM}m ${durS}s`;
+                
+                const distKm = (log.totalDistance / 1000).toFixed(1);
+                const gain = log.gain.toFixed(0);
+
                 const html = `
                 <div class="log-item">
-                    <div class="log-header">
-                        <div class="log-date">${date}</div>
-                        <button class="btn-delete-log" onclick="deleteLog(${log.date})">🗑️</button>
+                    <div class="log-summary" onclick="toggleLogDetails(${index})">
+                        <div>
+                            <div class="log-date">${dateStr} <span style="font-weight:normal; font-size:0.8em; color:#666">${timeStr}</span></div>
+                            <div class="log-basic-stats">
+                                <span>⏱️ ${durationFmt}</span>
+                                <span>📏 ${distKm} km</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="color:var(--neon-green)">+${gain}m</span>
+                            <button class="btn-delete-log" onclick="event.stopPropagation(); deleteLog(${log.startTime})">🗑️</button>
+                        </div>
                     </div>
-                    <div class="log-detail">
-                        <span>⏱️ ${duration}</span>
-                        <span>📈 Max ${log.maxAlt}m</span>
-                    </div>
-                    <div class="log-detail" style="margin-top:4px;">
-                        <span style="color:var(--neon-green)">⬆️ +${log.maxClimb}</span>
-                        <span style="color:var(--neon-red)">⬇️ ${log.maxSink}</span>
+                    
+                    <div id="log-det-${index}" class="log-details">
+                        <div class="detail-grid">
+                            <div class="detail-box">
+                                <div class="d-label">Altitud Max</div>
+                                <div class="d-val">${log.maxAlt} <span class="d-unit">m</span></div>
+                            </div>
+                             <div class="detail-box">
+                                <div class="d-label">Alt Despegue</div>
+                                <div class="d-val">${log.takeoffAlt} <span class="d-unit">m</span></div>
+                            </div>
+                            <div class="detail-box">
+                                <div class="d-label">Max Ascenso</div>
+                                <div class="d-val text-green-400">+${log.maxClimb} <span class="d-unit">m/s</span></div>
+                            </div>
+                             <div class="detail-box">
+                                <div class="d-label">Max Descenso</div>
+                                <div class="d-val text-red-400">${log.maxSink} <span class="d-unit">m/s</span></div>
+                            </div>
+                            <div class="detail-box">
+                                <div class="d-label">Velocidad Max</div>
+                                <div class="d-val">${log.maxSpeed} <span class="d-unit">km/h</span></div>
+                            </div>
+                            <div class="detail-box">
+                                <div class="d-label">Vel Promedio</div>
+                                <div class="d-val">${log.avgSpeed} <span class="d-unit">km/h</span></div>
+                            </div>
+                            <div class="detail-box">
+                                <div class="d-label">Dist. Lineal</div>
+                                <div class="d-val">${(log.linearDistance/1000).toFixed(1)} <span class="d-unit">km</span></div>
+                            </div>
+                        </div>
                     </div>
                 </div>`;
                 container.innerHTML += html;
             });
 
-            // ADD BULK DELETE BUTTON
             container.innerHTML += `
                 <button class="btn-delete-all" onclick="deleteAllLogs()">
                     ⚠️ Borrar Todo el Historial
@@ -662,18 +728,24 @@
             `;
         }
         
+        window.toggleLogDetails = (idx) => {
+            const el = $(`log-det-${idx}`);
+            if(el.style.display === 'block') el.style.display = 'none';
+            else el.style.display = 'block';
+        };
+
         window.deleteLog = (timestamp) => {
-            if(confirm("¿Estás seguro de que deseas eliminar este registro de vuelo? Esta acción no se puede deshacer.")) {
-                let logs = JSON.parse(localStorage.getItem('av_logs') || '[]');
-                logs = logs.filter(l => l.date !== timestamp);
-                localStorage.setItem('av_logs', JSON.stringify(logs));
-                renderLogs(); // Re-render immediately
+            if(confirm("¿Eliminar este vuelo?")) {
+                let logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
+                logs = logs.filter(l => l.startTime !== timestamp);
+                localStorage.setItem('glider_flight_history', JSON.stringify(logs));
+                renderLogs();
             }
         };
 
         window.deleteAllLogs = () => {
-            if(confirm("¡ATENCIÓN! ¿Estás seguro de que deseas eliminar TODOS los vuelos registrados? Esta acción no se puede deshacer.")) {
-                localStorage.removeItem('av_logs');
+            if(confirm("¡ATENCIÓN! ¿Borrar TODOS los vuelos? Acción irreversible.")) {
+                localStorage.removeItem('glider_flight_history');
                 renderLogs();
             }
         };
@@ -681,21 +753,59 @@
         function endFlight() {
             if (!appState.flying) return;
             
-            const now = Date.now();
-            const duration = (now - appState.startTime) / 1000;
+            const endTime = Date.now();
+            const totalTimeSec = (endTime - appState.startTime) / 1000;
             
-            if (duration > 10) {
-                const log = {
-                    date: appState.startTime,
-                    durationSeconds: duration,
-                    maxAlt: appState.stats.maxAlt,
+            // Only save if significant flight (> 10 sec and has track)
+            if (totalTimeSec > 10 && appState.fullTrack.length > 1) {
+                
+                // --- 1. Distance Calculations ---
+                let totalDist = 0;
+                for(let i=1; i<appState.fullTrack.length; i++) {
+                    const p1 = appState.fullTrack[i-1];
+                    const p2 = appState.fullTrack[i];
+                    totalDist += haversine(p1.lat, p1.lon, p2.lat, p2.lon);
+                }
+
+                // --- 2. Linear Distance ---
+                const startPt = appState.fullTrack[0];
+                const endPt = appState.fullTrack[appState.fullTrack.length-1];
+                const linearDist = haversine(startPt.lat, startPt.lon, endPt.lat, endPt.lon);
+
+                // --- 3. Speeds ---
+                const avgSpeed = (totalDist / totalTimeSec) * 3.6; // m/s to km/h
+                const maxSpeed = appState.stats.maxSpeed; // tracked live
+
+                // --- 4. Altimetry ---
+                const takeoffAlt = Math.round(startPt.alt);
+                const maxAlt = appState.stats.maxAlt;
+                const gain = maxAlt - takeoffAlt;
+
+                const flightLog = {
+                    startTime: appState.startTime,
+                    endTime: endTime,
+                    totalTime: totalTimeSec,
+                    totalDistance: Math.round(totalDist), // meters
+                    linearDistance: Math.round(linearDist), // meters
+                    maxSpeed: Math.round(maxSpeed),
+                    avgSpeed: parseFloat(avgSpeed.toFixed(1)),
+                    takeoffAlt: takeoffAlt,
+                    maxAlt: maxAlt,
+                    gain: Math.max(0, gain), // Net gain
                     maxClimb: appState.stats.maxClimb.toFixed(1),
-                    maxSink: appState.stats.maxSink.toFixed(1)
+                    maxSink: appState.stats.maxSink.toFixed(1),
+                    // Route optimization: Save raw for now, simplified to 4 decimals
+                    route: appState.fullTrack.map(p => ({
+                        lat: parseFloat(p.lat.toFixed(5)),
+                        lon: parseFloat(p.lon.toFixed(5)),
+                        a: Math.round(p.alt)
+                    }))
                 };
                 
-                const logs = JSON.parse(localStorage.getItem('av_logs') || '[]');
-                logs.push(log);
-                localStorage.setItem('av_logs', JSON.stringify(logs));
+                // Save to localStorage 'glider_flight_history'
+                const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
+                logs.push(flightLog);
+                localStorage.setItem('glider_flight_history', JSON.stringify(logs));
             }
             
             location.reload();
@@ -826,18 +936,40 @@
             appState.flightData.lat = coords.latitude;
             appState.flightData.lon = coords.longitude;
 
+            // Stats Update
             appState.stats.maxAlt = Math.max(appState.stats.maxAlt, appState.flightData.alt);
             appState.stats.maxClimb = Math.max(appState.stats.maxClimb, vario);
             appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
+            appState.stats.maxSpeed = Math.max(appState.stats.maxSpeed, speedKmh);
 
             if (coords.latitude && coords.longitude) {
-                // Radar History
+                // Radar History (Short term, pruned)
                 appState.trackHistory.push({
                     lat: coords.latitude, lon: coords.longitude, vario: vario, t: Date.now()
                 });
                 const cutoff = Date.now() - 90000;
                 if (appState.trackHistory[0] && appState.trackHistory[0].t < cutoff) {
                     appState.trackHistory = appState.trackHistory.filter(p => p.t > cutoff);
+                }
+                
+                // --- FULL LOG HISTORY (Filtered for memory) ---
+                // Only store point if distance > 10m from last stored point to optimize
+                const lastLogPt = appState.fullTrack[appState.fullTrack.length-1];
+                let shouldLog = true;
+                if(lastLogPt) {
+                    // Quick crude distance check to avoid heavy haversine per frame
+                    const dLat = Math.abs(coords.latitude - lastLogPt.lat);
+                    const dLon = Math.abs(coords.longitude - lastLogPt.lon);
+                    if(dLat < 0.0001 && dLon < 0.0001) shouldLog = false; 
+                }
+                
+                if(shouldLog) {
+                    appState.fullTrack.push({
+                        lat: coords.latitude,
+                        lon: coords.longitude,
+                        alt: filteredAlt,
+                        t: Date.now()
+                    });
                 }
 
                 // Update Map
@@ -991,8 +1123,9 @@
             
             appState.flying = true;
             appState.startTime = Date.now();
-            appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0 };
+            appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 };
             appState.takeoffAlt = null;
+            appState.fullTrack = []; // Reset tracklog
             
             resizeCanvas(); 
             // Initial view switch ensures sizes are correct
