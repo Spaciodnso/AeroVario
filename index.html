@@ -192,12 +192,33 @@
             min-height: 40vh; /* FORCE HEIGHT FOR IPHONE */
         }
 
-        /* Thermal Radar */
+        /* Thermal Radar & Graph */
         .radar-wrapper {
             width: 100%; height: 100%; position: absolute; top: 0; left: 0;
-            display: flex; justify-content: center; align-items: center;
+            display: flex; flex-direction: column; /* CHANGED to Column for Graph */
+            justify-content: flex-start;
+            align-items: stretch;
         }
+        
+        .radar-top-section {
+            position: relative;
+            flex: 1;
+            min-height: 0; /* Important for flex child to shrink */
+            width: 100%;
+        }
+        
+        .alt-graph-section {
+            height: 80px;
+            width: 100%;
+            border-top: 1px solid #1f2937;
+            background: #050505;
+            position: relative;
+            flex-shrink: 0;
+        }
+
         #thermal-canvas { width: 100%; height: 100%; }
+        #alt-graph { width: 100%; height: 100%; }
+
         .radar-overlay-text { position: absolute; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
         .radar-orientation { top: 5px; left: 5px; color: var(--neon-green); }
         .radar-scale { bottom: 5px; right: 5px; }
@@ -406,11 +427,19 @@
 
             <!-- Section 2: Visual Container (Swappable) -->
             <div class="vis-container">
-                <!-- Thermal Radar -->
+                <!-- Thermal Radar & Altitude Graph -->
                 <div id="view-radar" class="radar-wrapper">
-                    <canvas id="thermal-canvas"></canvas>
-                    <span class="radar-overlay-text radar-orientation">TRACK UP</span>
-                    <span class="radar-overlay-text radar-scale">200m</span>
+                    <!-- Top: Thermal Radar -->
+                    <div class="radar-top-section">
+                        <canvas id="thermal-canvas"></canvas>
+                        <span class="radar-overlay-text radar-orientation">TRACK UP</span>
+                        <span class="radar-overlay-text radar-scale">200m</span>
+                    </div>
+                    <!-- Bottom: Altitude Graph -->
+                    <div class="alt-graph-section">
+                        <canvas id="alt-graph"></canvas>
+                        <span class="radar-overlay-text" style="top:2px; left:4px;">ALT (2m)</span>
+                    </div>
                 </div>
 
                 <!-- Leaflet Map -->
@@ -489,7 +518,8 @@
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
             trackHistory: [], // For Radar (Short term)
-            fullTrack: []     // For Flight Log (Complete History)
+            fullTrack: [],     // For Flight Log (Complete History)
+            altHistory: [] // For Graph (Last 120 points)
         };
 
         // --- MAP & VIEW VARIABLES ---
@@ -511,6 +541,7 @@
             if (view === 'radar') {
                 $('view-radar').style.display = 'flex';
                 $('map-wrapper').style.display = 'none';
+                resizeCanvas(); // Ensure redraw
             } else {
                 $('view-radar').style.display = 'none';
                 $('map-wrapper').style.display = 'block';
@@ -899,78 +930,149 @@
             location.reload();
         }
 
-        // --- THERMAL RADAR LOGIC ---
-        const canvas = $('thermal-canvas');
-        const ctx = canvas.getContext('2d');
+        // --- THERMAL RADAR & GRAPH LOGIC ---
+        const thermalCanvas = $('thermal-canvas');
+        const thermalCtx = thermalCanvas.getContext('2d');
+        const altGraphCanvas = $('alt-graph');
+        const altGraphCtx = altGraphCanvas.getContext('2d');
         
         function resizeCanvas() {
-            const parent = canvas.parentElement;
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = parent.clientWidth * dpr;
-            canvas.height = parent.clientHeight * dpr;
-            ctx.scale(dpr, dpr);
-            canvas.logicalWidth = parent.clientWidth;
-            canvas.logicalHeight = parent.clientHeight;
+            
+            // Resize Thermal
+            const thermalParent = thermalCanvas.parentElement;
+            thermalCanvas.width = thermalParent.clientWidth * dpr;
+            thermalCanvas.height = thermalParent.clientHeight * dpr;
+            thermalCtx.scale(dpr, dpr);
+            thermalCanvas.logicalWidth = thermalParent.clientWidth;
+            thermalCanvas.logicalHeight = thermalParent.clientHeight;
+            
+            // Resize Alt Graph
+            const graphParent = altGraphCanvas.parentElement;
+            altGraphCanvas.width = graphParent.clientWidth * dpr;
+            altGraphCanvas.height = graphParent.clientHeight * dpr;
+            altGraphCtx.scale(dpr, dpr);
+            altGraphCanvas.logicalWidth = graphParent.clientWidth;
+            altGraphCanvas.logicalHeight = graphParent.clientHeight;
         }
         window.addEventListener('resize', resizeCanvas);
 
         function drawRadar() {
             if (!appState.flying || currentView !== 'radar') return; // Only draw if visible
-            const w = canvas.logicalWidth;
-            const h = canvas.logicalHeight;
+            
+            // --- THERMAL RADAR ---
+            const w = thermalCanvas.logicalWidth;
+            const h = thermalCanvas.logicalHeight;
             const cx = w / 2;
             const cy = h / 2;
             
-            ctx.clearRect(0, 0, w, h);
+            thermalCtx.clearRect(0, 0, w, h);
 
             // Draw Rings
             const maxDist = 250; 
             const scale = (Math.min(w, h) / 2) / maxDist; 
 
-            ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.arc(cx, cy, 100 * scale, 0, Math.PI * 2); ctx.stroke();
-            ctx.beginPath(); ctx.arc(cx, cy, 200 * scale, 0, Math.PI * 2); ctx.stroke();
+            thermalCtx.strokeStyle = '#374151'; thermalCtx.lineWidth = 1;
+            thermalCtx.beginPath(); thermalCtx.arc(cx, cy, 100 * scale, 0, Math.PI * 2); thermalCtx.stroke();
+            thermalCtx.beginPath(); thermalCtx.arc(cx, cy, 200 * scale, 0, Math.PI * 2); thermalCtx.stroke();
 
             // Draw Pilot (Triangle)
-            ctx.fillStyle = 'white';
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - 6); ctx.lineTo(cx - 4, cy + 4); ctx.lineTo(cx + 4, cy + 4);
-            ctx.fill();
+            thermalCtx.fillStyle = 'white';
+            thermalCtx.beginPath();
+            thermalCtx.moveTo(cx, cy - 6); thermalCtx.lineTo(cx - 4, cy + 4); thermalCtx.lineTo(cx + 4, cy + 4);
+            thermalCtx.fill();
 
-            if (appState.trackHistory.length < 2) return;
-            
-            const currLat = appState.flightData.lat;
-            const currLon = appState.flightData.lon;
-            const headingRad = (appState.flightData.heading || 0) * (Math.PI / 180);
-            const cosLat = Math.cos(currLat * (Math.PI / 180));
-            const metersPerDegLat = 111132;
-            const metersPerDegLon = 111319 * cosLat;
+            if (appState.trackHistory.length >= 2) {
+                const currLat = appState.flightData.lat;
+                const currLon = appState.flightData.lon;
+                const headingRad = (appState.flightData.heading || 0) * (Math.PI / 180);
+                const cosLat = Math.cos(currLat * (Math.PI / 180));
+                const metersPerDegLat = 111132;
+                const metersPerDegLon = 111319 * cosLat;
 
-            for (let i = 0; i < appState.trackHistory.length; i++) {
-                const p = appState.trackHistory[i];
-                const dy = (p.lat - currLat) * metersPerDegLat;
-                const dx = (p.lon - currLon) * metersPerDegLon;
+                for (let i = 0; i < appState.trackHistory.length; i++) {
+                    const p = appState.trackHistory[i];
+                    const dy = (p.lat - currLat) * metersPerDegLat;
+                    const dx = (p.lon - currLon) * metersPerDegLon;
 
-                // Track Up Rotation
-                const theta = -headingRad; 
-                const rx = dx * Math.cos(theta) - dy * Math.sin(theta);
-                const ry = dx * Math.sin(theta) + dy * Math.cos(theta);
+                    // Track Up Rotation
+                    const theta = -headingRad; 
+                    const rx = dx * Math.cos(theta) - dy * Math.sin(theta);
+                    const ry = dx * Math.sin(theta) + dy * Math.cos(theta);
 
-                const px = cx + rx * scale;
-                const py = cy - ry * scale;
+                    const px = cx + rx * scale;
+                    const py = cy - ry * scale;
 
-                if (px < -10 || px > w+10 || py < -10 || py > h+10) continue;
+                    if (px < -10 || px > w+10 || py < -10 || py > h+10) continue;
 
-                let radius = 2;
-                if (p.vario > 2.0) { ctx.fillStyle = '#d8b4fe'; radius = 5; }
-                else if (p.vario > 0.5) { ctx.fillStyle = '#ef4444'; radius = 3.5; }
-                else { ctx.fillStyle = '#4b5563'; }
+                    let radius = 2;
+                    if (p.vario > 2.0) { thermalCtx.fillStyle = '#d8b4fe'; radius = 5; }
+                    else if (p.vario > 0.5) { thermalCtx.fillStyle = '#ef4444'; radius = 3.5; }
+                    else { thermalCtx.fillStyle = '#4b5563'; }
 
-                const age = (Date.now() - p.t) / 1000; 
-                if (age > 90) continue;
+                    const age = (Date.now() - p.t) / 1000; 
+                    if (age > 90) continue;
 
-                ctx.beginPath(); ctx.arc(px, py, radius, 0, Math.PI * 2); ctx.fill();
+                    thermalCtx.beginPath(); thermalCtx.arc(px, py, radius, 0, Math.PI * 2); thermalCtx.fill();
+                }
             }
+        }
+        
+        function drawAltGraph() {
+            if (!appState.flying || currentView !== 'radar') return;
+            
+            const w = altGraphCanvas.logicalWidth;
+            const h = altGraphCanvas.logicalHeight;
+            const ctx = altGraphCtx;
+            
+            ctx.clearRect(0, 0, w, h);
+            
+            const data = appState.altHistory;
+            if(data.length < 2) return;
+            
+            // Find Min/Max for Scaling
+            let min = Infinity, max = -Infinity;
+            for(let v of data) {
+                if(v < min) min = v;
+                if(v > max) max = v;
+            }
+            
+            // Add padding to range
+            const range = max - min;
+            const pad = (range === 0) ? 10 : range * 0.2;
+            min -= pad;
+            max += pad;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = '#a3e635'; // Neon Green
+            ctx.lineWidth = 2;
+            
+            // X step
+            const stepX = w / 119; // 120 points max
+            
+            for(let i=0; i<data.length; i++) {
+                const x = i * stepX;
+                // Invert Y: top is 0
+                const norm = (data[i] - min) / (max - min);
+                const y = h - (norm * h);
+                
+                if(i===0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Fill Gradient Effect (optional)
+            ctx.lineTo((data.length-1)*stepX, h);
+            ctx.lineTo(0, h);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(163, 230, 53, 0.1)';
+            ctx.fill();
+            
+            // Min/Max Labels
+            ctx.fillStyle = '#666';
+            ctx.font = '10px monospace';
+            ctx.fillText(Math.round(max), 2, 10);
+            ctx.fillText(Math.round(min), 2, h-2);
         }
 
         // --- KALMAN & FLIGHT LOGIC ---
@@ -1030,6 +1132,10 @@
             appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
             appState.stats.maxSpeed = Math.max(appState.stats.maxSpeed, speedKmh);
 
+            // Alt Graph History (Last 120 points)
+            appState.altHistory.push(filteredAlt);
+            if(appState.altHistory.length > 120) appState.altHistory.shift();
+
             if (coords.latitude && coords.longitude) {
                 // Radar History (Short term, pruned)
                 appState.trackHistory.push({
@@ -1066,6 +1172,7 @@
 
             updateUI();
             drawRadar();
+            drawAltGraph(); // Update Graph
             audio.update(vario);
             checkAlerts(appState.flightData);
         }
@@ -1214,6 +1321,7 @@
             appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 };
             appState.takeoffAlt = null;
             appState.fullTrack = []; // Reset tracklog
+            appState.altHistory = []; // Reset Graph
             
             resizeCanvas(); 
             // Initial view switch ensures sizes are correct
