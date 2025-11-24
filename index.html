@@ -19,6 +19,7 @@
             --neon-red: #ef4444;
             --neon-purple: #d8b4fe;
             --neon-blue: #3b82f6;
+            --neon-cyan: #06b6d4;
             --bg-color: #000000;
             --panel-bg: #111827;
             --text-white: #f3f4f6;
@@ -294,6 +295,12 @@
         .d-val { font-size: 0.9rem; font-weight: bold; color: #f3f4f6; font-family: monospace; }
         .d-unit { font-size: 0.7rem; color: #6b7280; }
         
+        .btn-map-view {
+            width: 100%; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid #2563eb;
+            padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold; font-size: 0.8rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+
         .btn-delete-log {
             background: none; border: none; font-size: 1.2rem; cursor: pointer; opacity: 0.7; padding: 8px; color: #ef4444;
         }
@@ -302,6 +309,11 @@
             background: rgba(239, 68, 68, 0.1); border: 1px solid #7f1d1d; color: #ef4444;
             padding: 12px; width: 100%; border-radius: 8px; margin-top: 20px;
             cursor: pointer; font-weight: bold; text-transform: uppercase; font-size: 0.8rem;
+        }
+
+        /* Review Map specific */
+        #review-map-container {
+            flex: 1; border-radius: 12px; border: 1px solid #374151; overflow: hidden; background: #111;
         }
 
         @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
@@ -444,6 +456,16 @@
             <button class="icon-btn" onclick="toggleModal('modal-logs', false)">✕</button>
         </div>
         <div id="logs-list" class="w-full"></div>
+    </div>
+    
+    <!-- === REVIEW MAP MODAL === -->
+    <div id="modal-review" class="modal-overlay hidden">
+        <div class="modal-header">
+            <span class="modal-title">Ruta de Vuelo</span>
+            <button class="icon-btn" onclick="closeReviewMap()">✕</button>
+        </div>
+        <div id="review-map-container"></div>
+        <div style="text-align:center; font-size:10px; color:#666; margin-top:5px;">Cyan: Ruta de Vuelo</div>
     </div>
 
     <!-- === JAVASCRIPT LOGIC === -->
@@ -669,6 +691,8 @@
                 const distKm = (log.totalDistance / 1000).toFixed(1);
                 const gain = log.gain.toFixed(0);
 
+                const hasRoute = log.route && log.route.length > 0;
+
                 const html = `
                 <div class="log-item">
                     <div class="log-summary" onclick="toggleLogDetails(${index})">
@@ -716,6 +740,11 @@
                                 <div class="d-val">${(log.linearDistance/1000).toFixed(1)} <span class="d-unit">km</span></div>
                             </div>
                         </div>
+                        ${hasRoute ? `
+                        <button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">
+                            🗺️ Ver Mapa
+                        </button>
+                        ` : ''}
                     </div>
                 </div>`;
                 container.innerHTML += html;
@@ -748,6 +777,65 @@
                 localStorage.removeItem('glider_flight_history');
                 renderLogs();
             }
+        };
+        
+        // --- REVIEW MAP LOGIC ---
+        let reviewMap = null;
+        
+        window.viewFlightMap = (startTime) => {
+            const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
+            const log = logs.find(l => l.startTime === startTime);
+            
+            if(!log || !log.route || log.route.length === 0) {
+                alert("No hay datos de ruta disponibles para este vuelo.");
+                return;
+            }
+            
+            // Show modal
+            $('modal-review').classList.remove('hidden');
+            
+            // Init map if needed or reset
+            if(reviewMap) {
+                reviewMap.remove();
+                reviewMap = null;
+            }
+            
+            // Wait for display:block to take effect for size calculation
+            setTimeout(() => {
+                reviewMap = L.map('review-map-container', {
+                     attributionControl: false
+                }).setView([0,0], 10);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                }).addTo(reviewMap);
+                
+                // Map route array {lat, lon, a} -> [lat, lon]
+                const latlngs = log.route.map(p => [p.lat, p.lon]);
+                
+                // Draw Polyline (Neon Cyan)
+                const polyline = L.polyline(latlngs, {
+                    color: '#06b6d4', // Cyan
+                    weight: 5,
+                    opacity: 0.9
+                }).addTo(reviewMap);
+                
+                // Start/End Markers
+                L.circleMarker(latlngs[0], { color: '#a3e635', radius: 6, fillOpacity: 1 }).bindPopup('Despegue').addTo(reviewMap);
+                L.circleMarker(latlngs[latlngs.length-1], { color: '#ef4444', radius: 6, fillOpacity: 1 }).bindPopup('Aterrizaje').addTo(reviewMap);
+                
+                // Fit bounds
+                reviewMap.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+                
+            }, 100);
+        };
+        
+        window.closeReviewMap = () => {
+             $('modal-review').classList.add('hidden');
+             if(reviewMap) {
+                 reviewMap.remove();
+                 reviewMap = null;
+             }
         };
 
         function endFlight() {
