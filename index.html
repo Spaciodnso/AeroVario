@@ -63,6 +63,16 @@
             transition: opacity 0.3s ease;
         }
 
+        /* --- GLOBAL SETTINGS BUTTON --- */
+        #btn-settings {
+            position: fixed;
+            left: 15px;
+            /* iOS Safe Area Support */
+            top: max(15px, env(safe-area-inset-top) + 10px);
+            z-index: 1000; /* High visibility, but below Modals (2000) */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+
         /* --- START SCREEN --- */
         .start-btn {
             background: var(--neon-green);
@@ -93,15 +103,26 @@
             height: 50px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end; /* Push Mute to right */
             padding: 0 16px;
             font-size: 0.7rem;
             color: var(--text-gray);
             border-bottom: 1px solid #333;
             flex-shrink: 0;
+            position: relative;
+            /* Add top padding for Safe Area if needed in HUD */
+            padding-top: env(safe-area-inset-top);
+            height: calc(50px + env(safe-area-inset-top));
         }
 
-        .status-group { display: flex; gap: 10px; font-weight: bold; }
+        .status-group { 
+            display: flex; gap: 10px; font-weight: bold; 
+            /* Center Absolutely */
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 15px; /* Adjust based on height */
+        }
 
         .status-badge { padding: 4px 6px; border-radius: 4px; transition: color 0.3s; border: 1px solid transparent; }
         .status-badge.error-clickable {
@@ -111,6 +132,7 @@
         .icon-btn {
             background: #1f2937; border: none; color: white; width: 36px; height: 36px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center; font-size: 1rem; cursor: pointer;
+            border: 1px solid #374151;
         }
 
         /* Main Layout */
@@ -387,6 +409,9 @@
 </head>
 <body>
 
+    <!-- GLOBAL SETTINGS BUTTON -->
+    <button id="btn-settings" class="icon-btn">⚙️</button>
+
     <!-- === START SCREEN === -->
     <div id="screen-start" class="flex flex-col items-center justify-center relative">
         <div style="position:absolute; top:0; width:100%; height:30%; background:radial-gradient(circle at top, rgba(163,230,53,0.1), transparent);"></div>
@@ -405,7 +430,7 @@
 
         <!-- Top Bar -->
         <div class="top-bar">
-            <button id="btn-settings" class="icon-btn">⚙️</button>
+            <!-- Settings button moved to global body -->
             <div class="status-group">
                 <div id="gps-status" class="status-badge" style="color: #eab308;">GPS: Inic...</div>
                 <div id="sat-status" class="status-badge" style="color: #4b5563;">SAT: --</div>
