@@ -168,79 +168,32 @@
         }
         .compass-value-text { position: absolute; bottom: -12px; font-size: 9px; color: #6b7280; font-family: monospace; }
 
-        /* --- VIEW SWITCHER (TABS) --- */
-        .view-switcher {
-            display: flex; gap: 4px; margin-bottom: 0; flex-shrink: 0; height: 30px;
-        }
-        .view-tab {
-            flex: 1; background: #111827; border: 1px solid #374151; border-bottom: none;
-            color: #6b7280; font-size: 0.7rem; font-weight: bold; padding: 6px; border-radius: 8px 8px 0 0;
-            cursor: pointer; transition: all 0.2s;
-        }
-        .view-tab.active {
-            background: #050505; color: var(--neon-green); border-color: var(--neon-green); border-bottom: 1px solid #050505;
-        }
-
-        /* --- VISUALIZATION AREA (MAP/RADAR) --- */
+        /* --- VISUALIZATION AREA (UNIFIED MAP + ALT GRAPH) --- */
         .vis-container {
-            flex: 2; /* Take more vertical space (50% approx) */
+            flex: 2; /* Main area */
+            display: flex;
+            flex-direction: column;
             position: relative; 
             border: 1px solid #374151; 
             border-top: 1px solid var(--neon-green);
             background: #000; 
-            border-radius: 0 0 12px 12px; 
+            border-radius: 12px; 
             overflow: hidden; 
-            min-height: 40vh; /* FORCE HEIGHT FOR IPHONE */
+            min-height: 40vh;
         }
 
-        /* Thermal Radar & Graph */
-        .radar-wrapper {
-            width: 100%; height: 100%; position: absolute; top: 0; left: 0;
-            display: flex; flex-direction: column; /* CHANGED to Column for Graph */
-            justify-content: flex-start;
-            align-items: stretch;
-        }
-        
-        .radar-top-section {
-            position: relative;
-            flex: 1;
-            min-height: 0; /* Important for flex child to shrink */
-            width: 100%;
-        }
-        
-        .alt-graph-section {
-            height: 80px;
-            width: 100%;
-            border-top: 1px solid #1f2937;
-            background: #050505;
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        #thermal-canvas { width: 100%; height: 100%; }
-        #alt-graph { width: 100%; height: 100%; }
-
-        .radar-overlay-text { position: absolute; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
-        .radar-orientation { top: 5px; left: 5px; color: var(--neon-green); }
-        .radar-scale { bottom: 5px; right: 5px; }
-
-        /* Leaflet Map Container */
+        /* Map fills remaining space */
         #map-wrapper {
+            flex: 1;
             width: 100%; 
-            height: 100%; 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
+            position: relative; 
             z-index: 10;
-            display: none; /* Hidden by default */
         }
         
         #map { 
             width: 100%; 
             height: 100%; 
             background: #111; 
-            border: 2px solid white; /* DEBUGGING BORDER - REMOVE LATER IF NEEDED */
-            box-sizing: border-box;
             z-index: 1;
         }
         
@@ -249,6 +202,19 @@
         .leaflet-marker-icon { filter: none; }
         .leaflet-control-container .leaflet-top { top: 10px; }
         .leaflet-control-container .leaflet-bottom { bottom: 10px; }
+
+        /* Alt Graph (Bottom Strip) */
+        .alt-graph-section {
+            height: 60px; /* Slightly smaller to give map more room */
+            width: 100%;
+            border-top: 1px solid #1f2937;
+            background: #050505;
+            position: relative;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+        #alt-graph { width: 100%; height: 100%; }
+        .graph-label { position: absolute; top: 2px; left: 4px; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
 
         /* Info Grid */
         .info-grid {
@@ -474,32 +440,17 @@
                 </div>
             </div>
 
-            <!-- View Switcher Tabs -->
-            <div class="view-switcher">
-                <button id="tab-radar" class="view-tab active" onclick="switchView('radar')">RADAR 🎯</button>
-                <button id="tab-map" class="view-tab" onclick="switchView('map')">MAPA 🗺️</button>
-            </div>
-
-            <!-- Section 2: Visual Container (Swappable) -->
+            <!-- Section 2: Unified Visual Container -->
             <div class="vis-container">
-                <!-- Thermal Radar & Altitude Graph -->
-                <div id="view-radar" class="radar-wrapper">
-                    <!-- Top: Thermal Radar -->
-                    <div class="radar-top-section">
-                        <canvas id="thermal-canvas"></canvas>
-                        <span class="radar-overlay-text radar-orientation">TRACK UP</span>
-                        <span class="radar-overlay-text radar-scale">200m</span>
-                    </div>
-                    <!-- Bottom: Altitude Graph -->
-                    <div class="alt-graph-section">
-                        <canvas id="alt-graph"></canvas>
-                        <span class="radar-overlay-text" style="top:2px; left:4px;">ALT (2m)</span>
-                    </div>
-                </div>
-
-                <!-- Leaflet Map -->
+                <!-- Leaflet Map (Unified) -->
                 <div id="map-wrapper">
                     <div id="map"></div>
+                </div>
+
+                <!-- Altitude Graph (Bottom Strip) -->
+                <div class="alt-graph-section">
+                    <canvas id="alt-graph"></canvas>
+                    <span class="graph-label">ALT HISTORY (2m)</span>
                 </div>
             </div>
 
@@ -643,10 +594,10 @@
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 },
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
-            trackHistory: [], // For Radar (Short term)
             fullTrack: [],     // For Flight Log (Complete History)
             altHistory: [], // For Graph (Last 120 points)
-            startLocation: null // New: To store reverse geocoded name
+            startLocation: null, // New: To store reverse geocoded name
+            mapThermalMarkers: [] // New: Buffer for Leaflet Thermal Markers
         };
 
         // --- WAKE LOCK MANAGER ---
@@ -679,42 +630,11 @@
             }
         });
 
-        // --- MAP & VIEW VARIABLES ---
+        // --- MAP VARIABLES ---
         let mapInstance = null;
         let mapMarker = null;
         let mapPolyline = null;
-        let currentView = 'radar'; // 'radar' or 'map'
         let isMapCentered = false; // Controls initial zoom
-
-        // --- VIEW SWITCHING ---
-        window.switchView = (view) => {
-            currentView = view;
-            
-            // Update Tabs
-            $('tab-radar').className = view === 'radar' ? 'view-tab active' : 'view-tab';
-            $('tab-map').className = view === 'map' ? 'view-tab active' : 'view-tab';
-            
-            // Update Containers
-            if (view === 'radar') {
-                $('view-radar').style.display = 'flex';
-                $('map-wrapper').style.display = 'none';
-                resizeCanvas(); // Ensure redraw
-            } else {
-                $('view-radar').style.display = 'none';
-                $('map-wrapper').style.display = 'block';
-                
-                // CRITICAL FIX: Invalidate Size when showing map
-                setTimeout(() => {
-                    if (mapInstance) {
-                        mapInstance.invalidateSize();
-                        // If we have a position, center map
-                        if(appState.flightData.lat && appState.flightData.lon) {
-                             mapInstance.panTo([appState.flightData.lat, appState.flightData.lon]);
-                        }
-                    }
-                }, 100);
-            }
-        };
 
         // --- MAP INITIALIZATION ---
         function initMap() {
@@ -754,7 +674,7 @@
             }, 500);
         }
 
-        function updateMap(lat, lon) {
+        function updateMap(lat, lon, vario) {
             if (!mapInstance || !lat || !lon) return;
 
             const latLng = [lat, lon];
@@ -765,12 +685,36 @@
             // Add to Track
             mapPolyline.addLatLng(latLng);
 
+            // --- THERMAL MARKERS (INTEGRATED RADAR) ---
+            let tColor = '#6b7280'; // Gray (Neutral)
+            let tRadius = 2;
+            let tOpacity = 0.5;
+
+            if (vario > 2.0) { tColor = '#d8b4fe'; tRadius = 8; tOpacity = 0.9; } // Strong Lift (Magenta)
+            else if (vario > 0.5) { tColor = '#ef4444'; tRadius = 6; tOpacity = 0.9; } // Moderate Lift (Red)
+            
+            const thermalMarker = L.circleMarker(latLng, {
+                color: tColor,
+                fillColor: tColor,
+                fillOpacity: tOpacity,
+                stroke: false,
+                radius: tRadius
+            }).addTo(mapInstance);
+
+            appState.mapThermalMarkers.push(thermalMarker);
+
+            // Limit buffer to 120 points to prevent lag
+            if (appState.mapThermalMarkers.length > 120) {
+                const oldMarker = appState.mapThermalMarkers.shift();
+                mapInstance.removeLayer(oldMarker);
+            }
+
             // SMART ZOOM & CENTERING LOGIC
             if (!isMapCentered) {
                 // First Fix: Hard Zoom (Jump) to level 17
                 mapInstance.setView(latLng, 17);
                 isMapCentered = true;
-            } else if (currentView === 'map') {
+            } else {
                 // Continuous Tracking: Smooth Pan
                 mapInstance.panTo(latLng);
             }
@@ -1191,22 +1135,12 @@
             location.reload();
         }
 
-        // --- THERMAL RADAR & GRAPH LOGIC ---
-        const thermalCanvas = $('thermal-canvas');
-        const thermalCtx = thermalCanvas.getContext('2d');
+        // --- GRAPH LOGIC ---
         const altGraphCanvas = $('alt-graph');
         const altGraphCtx = altGraphCanvas.getContext('2d');
         
         function resizeCanvas() {
             const dpr = window.devicePixelRatio || 1;
-            
-            // Resize Thermal
-            const thermalParent = thermalCanvas.parentElement;
-            thermalCanvas.width = thermalParent.clientWidth * dpr;
-            thermalCanvas.height = thermalParent.clientHeight * dpr;
-            thermalCtx.scale(dpr, dpr);
-            thermalCanvas.logicalWidth = thermalParent.clientWidth;
-            thermalCanvas.logicalHeight = thermalParent.clientHeight;
             
             // Resize Alt Graph
             const graphParent = altGraphCanvas.parentElement;
@@ -1217,70 +1151,9 @@
             altGraphCanvas.logicalHeight = graphParent.clientHeight;
         }
         window.addEventListener('resize', resizeCanvas);
-
-        function drawRadar() {
-            if (!appState.flying || currentView !== 'radar') return; // Only draw if visible
-            
-            // --- THERMAL RADAR ---
-            const w = thermalCanvas.logicalWidth;
-            const h = thermalCanvas.logicalHeight;
-            const cx = w / 2;
-            const cy = h / 2;
-            
-            thermalCtx.clearRect(0, 0, w, h);
-
-            // Draw Rings
-            const maxDist = 250; 
-            const scale = (Math.min(w, h) / 2) / maxDist; 
-
-            thermalCtx.strokeStyle = '#374151'; thermalCtx.lineWidth = 1;
-            thermalCtx.beginPath(); thermalCtx.arc(cx, cy, 100 * scale, 0, Math.PI * 2); thermalCtx.stroke();
-            thermalCtx.beginPath(); thermalCtx.arc(cx, cy, 200 * scale, 0, Math.PI * 2); thermalCtx.stroke();
-
-            // Draw Pilot (Triangle)
-            thermalCtx.fillStyle = 'white';
-            thermalCtx.beginPath();
-            thermalCtx.moveTo(cx, cy - 6); thermalCtx.lineTo(cx - 4, cy + 4); thermalCtx.lineTo(cx + 4, cy + 4);
-            thermalCtx.fill();
-
-            if (appState.trackHistory.length >= 2) {
-                const currLat = appState.flightData.lat;
-                const currLon = appState.flightData.lon;
-                const headingRad = (appState.flightData.heading || 0) * (Math.PI / 180);
-                const cosLat = Math.cos(currLat * (Math.PI / 180));
-                const metersPerDegLat = 111132;
-                const metersPerDegLon = 111319 * cosLat;
-
-                for (let i = 0; i < appState.trackHistory.length; i++) {
-                    const p = appState.trackHistory[i];
-                    const dy = (p.lat - currLat) * metersPerDegLat;
-                    const dx = (p.lon - currLon) * metersPerDegLon;
-
-                    // Track Up Rotation
-                    const theta = -headingRad; 
-                    const rx = dx * Math.cos(theta) - dy * Math.sin(theta);
-                    const ry = dx * Math.sin(theta) + dy * Math.cos(theta);
-
-                    const px = cx + rx * scale;
-                    const py = cy - ry * scale;
-
-                    if (px < -10 || px > w+10 || py < -10 || py > h+10) continue;
-
-                    let radius = 2;
-                    if (p.vario > 2.0) { thermalCtx.fillStyle = '#d8b4fe'; radius = 5; }
-                    else if (p.vario > 0.5) { thermalCtx.fillStyle = '#ef4444'; radius = 3.5; }
-                    else { thermalCtx.fillStyle = '#4b5563'; }
-
-                    const age = (Date.now() - p.t) / 1000; 
-                    if (age > 90) continue;
-
-                    thermalCtx.beginPath(); thermalCtx.arc(px, py, radius, 0, Math.PI * 2); thermalCtx.fill();
-                }
-            }
-        }
         
         function drawAltGraph() {
-            if (!appState.flying || currentView !== 'radar') return;
+            if (!appState.flying) return;
             
             const w = altGraphCanvas.logicalWidth;
             const h = altGraphCanvas.logicalHeight;
@@ -1398,17 +1271,8 @@
             if(appState.altHistory.length > 120) appState.altHistory.shift();
 
             if (coords.latitude && coords.longitude) {
-                // Radar History (Short term, pruned)
-                appState.trackHistory.push({
-                    lat: coords.latitude, lon: coords.longitude, vario: vario, t: Date.now()
-                });
-                const cutoff = Date.now() - 90000;
-                if (appState.trackHistory[0] && appState.trackHistory[0].t < cutoff) {
-                    appState.trackHistory = appState.trackHistory.filter(p => p.t > cutoff);
-                }
                 
                 // --- FULL LOG HISTORY (Filtered for memory) ---
-                // Only store point if distance > 10m from last stored point to optimize
                 const lastLogPt = appState.fullTrack[appState.fullTrack.length-1];
                 let shouldLog = true;
                 if(lastLogPt) {
@@ -1427,12 +1291,11 @@
                     });
                 }
 
-                // Update Map
-                updateMap(coords.latitude, coords.longitude);
+                // Update Unified Map
+                updateMap(coords.latitude, coords.longitude, vario);
             }
 
             updateUI();
-            drawRadar();
             drawAltGraph(); // Update Graph
             audio.update(vario);
             checkAlerts(appState.flightData);
@@ -1587,10 +1450,9 @@
             appState.fullTrack = []; // Reset tracklog
             appState.altHistory = []; // Reset Graph
             appState.startLocation = null; // Reset location
+            appState.mapThermalMarkers = []; // Reset thermal markers
             
             resizeCanvas(); 
-            // Initial view switch ensures sizes are correct
-            switchView('radar');
             
             if('geolocation' in navigator) {
                 $('gps-status').innerText = "GPS: Buscando...";
