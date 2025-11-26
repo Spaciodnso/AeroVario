@@ -201,7 +201,7 @@
             background: #000; 
             border-radius: 12px; 
             overflow: hidden; 
-            min-height: 40vh;
+            min-height: 30vh;
         }
 
         /* Map fills remaining space */
@@ -238,16 +238,23 @@
         #alt-graph { width: 100%; height: 100%; }
         .graph-label { position: absolute; top: 2px; left: 4px; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
 
-        /* Info Grid */
+        /* Info Grid - REFACTORED TO 2x2 */
         .info-grid {
-            height: 70px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; flex-shrink: 0;
+            height: auto; 
+            min-height: 140px; /* Taller for 2 rows */
+            display: grid; 
+            grid-template-columns: 1fr 1fr; /* 2 Columns */
+            grid-template-rows: 1fr 1fr; /* 2 Rows */
+            gap: 8px; 
+            flex-shrink: 0;
+            padding-bottom: 8px;
         }
         .card {
             background: var(--panel-bg); border-radius: 8px; padding: 6px;
             display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #374151;
         }
         .label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-gray); }
-        .value { font-size: 1.1rem; font-weight: bold; text-align: right; }
+        .value { font-size: 1.4rem; font-weight: bold; text-align: right; }
         .unit { font-size: 0.65rem; color: var(--text-gray); text-align: right; }
 
         #btn-stop {
@@ -479,7 +486,7 @@
                 </div>
             </div>
 
-            <!-- Section 3: Grid Info -->
+            <!-- Section 3: Grid Info (NOW 2x2) -->
             <div class="info-grid">
                 <div class="card" onclick="resetAlt()">
                     <span class="label">Altitud (MSL)</span>
@@ -492,6 +499,10 @@
                 <div class="card">
                     <span class="label">Planeo</span>
                     <div><div id="value-glide" class="value font-mono">--</div><div class="unit">L/D</div></div>
+                </div>
+                <div class="card">
+                    <span class="label">TIEMPO</span>
+                    <div><div id="value-time" class="value font-mono">00:00:00</div></div>
                 </div>
             </div>
         </div>
@@ -625,6 +636,27 @@
             mapThermalMarkers: [] // New: Buffer for Leaflet Thermal Markers
         };
 
+        // --- FLIGHT TIMER ---
+        let flightTimerInterval = null;
+
+        function updateFlightClock() {
+            if (!appState.flying) return;
+            const diff = Date.now() - appState.startTime;
+            
+            // Format HH:MM:SS
+            const hours = Math.floor(diff / 3600000);
+            const minutes = Math.floor((diff % 3600000) / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+            
+            const str = 
+                (hours < 10 ? "0" + hours : hours) + ":" +
+                (minutes < 10 ? "0" + minutes : minutes) + ":" +
+                (seconds < 10 ? "0" + seconds : seconds);
+            
+            const el = $('value-time');
+            if(el) el.innerText = str;
+        }
+
         // --- WAKE LOCK MANAGER ---
         let wakeLock = null;
 
@@ -661,6 +693,22 @@
         let mapPolyline = null;
         let isMapCentered = false; // Controls initial zoom
 
+        // Custom Paraglider SVG Icon (Data URI)
+        const PARAGLIDER_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <path d="M4 24 C4 10 32 4 32 4 C32 4 60 10 60 24 C60 28 54 30 32 26 C10 30 4 28 4 24 Z" fill="#06b6d4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M12 26 L28 48 M52 26 L36 48 M32 25 L32 48" stroke="white" stroke-width="1" stroke-linecap="round"/>
+            <circle cx="32" cy="50" r="4" fill="#a3e635" stroke="white" stroke-width="1"/>
+        </svg>
+        `.trim();
+
+        const pilotIcon = L.icon({
+            iconUrl: 'data:image/svg+xml;base64,' + btoa(PARAGLIDER_SVG),
+            iconSize: [48, 48],
+            iconAnchor: [24, 38], // Anchored near the pilot (approx bottom center of visual mass)
+            popupAnchor: [0, -40]
+        });
+
         // --- MAP INITIALIZATION ---
         function initMap() {
             if (mapInstance) return;
@@ -676,14 +724,10 @@
                 maxZoom: 19,
             }).addTo(mapInstance);
 
-            // Pilot Marker (Red Circle with white border)
-            mapMarker = L.circleMarker([0,0], {
-                radius: 8,
-                fillColor: "#a3e635",
-                color: "#fff",
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 1
+            // Pilot Marker (Paraglider Icon)
+            mapMarker = L.marker([0,0], {
+                icon: pilotIcon,
+                zIndexOffset: 1000 // Ensure pilot is always on top
             }).addTo(mapInstance);
 
             // Flight Path (Blue Neon Line)
@@ -704,7 +748,7 @@
 
             const latLng = [lat, lon];
             
-            // Update Marker
+            // Update Marker Position
             mapMarker.setLatLng(latLng);
             
             // Add to Track
@@ -1101,6 +1145,8 @@
         function endFlight() {
             if (!appState.flying) return;
             
+            if(flightTimerInterval) clearInterval(flightTimerInterval); // Stop timer
+
             const endTime = Date.now();
             const totalTimeSec = (endTime - appState.startTime) / 1000;
             
@@ -1455,6 +1501,10 @@
 
             // Start Wake Lock
             manageWakeLock(true);
+
+            // Start Clock Timer
+            if(flightTimerInterval) clearInterval(flightTimerInterval);
+            flightTimerInterval = setInterval(updateFlightClock, 1000);
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try {
