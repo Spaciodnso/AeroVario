@@ -238,13 +238,13 @@
         #alt-graph { width: 100%; height: 100%; }
         .graph-label { position: absolute; top: 2px; left: 4px; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
 
-        /* Info Grid - REFACTORED TO 2x2 */
+        /* Info Grid - DYNAMIC SLOTS */
         .info-grid {
             height: auto; 
-            min-height: 140px; /* Taller for 2 rows */
+            min-height: 200px;
             display: grid; 
             grid-template-columns: 1fr 1fr; /* 2 Columns */
-            grid-template-rows: 1fr 1fr; /* 2 Rows */
+            grid-template-rows: auto auto auto; /* 3 Rows */
             gap: 8px; 
             flex-shrink: 0;
             padding-bottom: 8px;
@@ -252,7 +252,9 @@
         .card {
             background: var(--panel-bg); border-radius: 8px; padding: 6px;
             display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #374151;
+            min-height: 60px;
         }
+        .card-wide { grid-column: span 2; }
         .label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-gray); }
         .value { font-size: 1.4rem; font-weight: bold; text-align: right; }
         .unit { font-size: 0.65rem; color: var(--text-gray); text-align: right; }
@@ -279,7 +281,7 @@
         .input-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
         .input-row label { font-size: 0.8rem; color: #9ca3af; }
         
-        input[type="number"], select { background: #000; color: white; border: 1px solid #4b5563; padding: 6px; border-radius: 6px; width: 100px; text-align: right; }
+        input[type="number"], select { background: #000; color: white; border: 1px solid #4b5563; padding: 6px; border-radius: 6px; width: 120px; text-align: right; }
 
         /* Toggle Switch */
         .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
@@ -289,6 +291,12 @@
         input:checked + .slider { background-color: var(--neon-green); }
         input:checked + .slider:before { transform: translateX(16px); }
         
+        /* LAYOUT CONFIG */
+        .layout-grid-config { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .layout-slot { background: #111; padding: 8px; border-radius: 6px; border: 1px dashed #4b5563; }
+        .slot-label { font-size: 0.7rem; color: var(--neon-blue); margin-bottom: 4px; display:block; }
+        .slot-select { width: 100%; font-size: 0.8rem; text-align: left; }
+
         /* LOG STYLES - ADVANCED */
         .log-item { background: #1f2937; border: 1px solid #374151; border-radius: 10px; margin-bottom: 12px; overflow: hidden; transition: all 0.2s; }
         .log-summary { 
@@ -486,24 +494,9 @@
                 </div>
             </div>
 
-            <!-- Section 3: Grid Info (NOW 2x2) -->
-            <div class="info-grid">
-                <div class="card" onclick="resetAlt()">
-                    <span class="label">Altitud (MSL)</span>
-                    <div><div id="value-alt" class="value font-mono">0</div><div class="unit">m</div></div>
-                </div>
-                <div class="card">
-                    <span class="label">Velocidad</span>
-                    <div><div id="value-speed" class="value font-mono">0</div><div class="unit">km/h</div></div>
-                </div>
-                <div class="card">
-                    <span class="label">Planeo</span>
-                    <div><div id="value-glide" class="value font-mono">--</div><div class="unit">L/D</div></div>
-                </div>
-                <div class="card">
-                    <span class="label">TIEMPO</span>
-                    <div><div id="value-time" class="value font-mono">00:00:00</div></div>
-                </div>
+            <!-- Section 3: Dynamic Grid Info (Inject via JS) -->
+            <div id="dashboard-grid" class="info-grid">
+                <!-- JavaScript will populate this based on layout config -->
             </div>
         </div>
 
@@ -615,6 +608,18 @@
         const $ = (id) => document.getElementById(id);
         window.onerror = (msg, url, line) => $('error-console').innerText += `\nERR: ${msg}`;
 
+        // --- WIDGET REGISTRY (DATA LIBRARY) ---
+        const WIDGETS_REGISTRY = {
+            'alt': { label: 'ALTITUD', unit: 'm', id: 'value-alt' },
+            'rel': { label: 'ALT RELATIVA', unit: 'm', id: 'value-rel-alt' },
+            'spd': { label: 'VELOCIDAD', unit: 'km/h', id: 'value-speed' },
+            'gld': { label: 'PLANEO', unit: 'L/D', id: 'value-glide' },
+            'tim': { label: 'TIEMPO', unit: '', id: 'value-time' },
+            'dst': { label: 'DISTANCIA', unit: 'km', id: 'value-dist' },
+            'hdg': { label: 'RUMBO', unit: '°', id: 'value-hdg' },
+            'empty': { label: 'VACÍO', unit: '', id: null }
+        };
+
         // --- STATE ---
         const DEFAULT_SETTINGS = {
             alerts: [
@@ -625,16 +630,53 @@
         
         let appState = {
             flying: false, muted: false, startTime: 0,
-            flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0 },
+            flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0, totalDistance: 0 },
             sensors: { magHeading: null },
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 },
             takeoffAlt: null,
             settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
-            fullTrack: [],     // For Flight Log (Complete History)
-            altHistory: [], // For Graph (Last 120 points)
-            startLocation: null, // New: To store reverse geocoded name
-            mapThermalMarkers: [] // New: Buffer for Leaflet Thermal Markers
+            layout: JSON.parse(localStorage.getItem('av_layout')) || ['alt', 'spd', 'gld', 'tim', 'dst', 'hdg'], // Default Grid
+            fullTrack: [],    
+            altHistory: [], 
+            startLocation: null, 
+            mapThermalMarkers: [],
+            lastOdometerPos: null
         };
+
+        // --- DASHBOARD RENDER LOGIC ---
+        function renderDashboard() {
+            const grid = $('dashboard-grid');
+            if(!grid) return;
+            grid.innerHTML = ''; // Clear
+
+            appState.layout.forEach(widgetKey => {
+                const w = WIDGETS_REGISTRY[widgetKey] || WIDGETS_REGISTRY['empty'];
+                const div = document.createElement('div');
+                div.className = 'card';
+                
+                if (w.id === null) {
+                    // Empty Slot
+                    div.innerHTML = `<span class="label" style="opacity:0.3">VACÍO</span>`;
+                } else {
+                    // Special logic for reset alt click
+                    const clickAction = (widgetKey === 'alt' || widgetKey === 'rel') ? 'onclick="resetAlt()"' : '';
+                    const cursorStyle = (widgetKey === 'alt' || widgetKey === 'rel') ? 'cursor:pointer' : '';
+                    const icon = (widgetKey === 'alt' || widgetKey === 'rel') ? '🔄' : '';
+                    
+                    div.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; ${cursorStyle}" ${clickAction}>
+                            <span class="label">${w.label}</span>
+                            ${icon ? `<span style="font-size:0.7rem; opacity:0.6">${icon}</span>` : ''}
+                        </div>
+                        <div>
+                            <div id="${w.id}" class="value font-mono">--</div>
+                            ${w.unit ? `<div class="unit">${w.unit}</div>` : ''}
+                        </div>
+                    `;
+                }
+                grid.appendChild(div);
+            });
+        }
 
         // --- FLIGHT TIMER ---
         let flightTimerInterval = null;
@@ -653,6 +695,7 @@
                 (minutes < 10 ? "0" + minutes : minutes) + ":" +
                 (seconds < 10 ? "0" + seconds : seconds);
             
+            // Safe Update
             const el = $('value-time');
             if(el) el.innerText = str;
         }
@@ -666,10 +709,8 @@
             try {
                 if (shouldLock && !wakeLock) {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    // console.log('WakeLock Active');
                     wakeLock.addEventListener('release', () => {
                         wakeLock = null;
-                        // console.log('WakeLock Released');
                     });
                 } else if (!shouldLock && wakeLock) {
                     await wakeLock.release();
@@ -680,20 +721,18 @@
             }
         }
 
-        // Auto-Reacquire on Visibility Change
         document.addEventListener('visibilitychange', async () => {
             if (document.visibilityState === 'visible' && appState.flying) {
                 await manageWakeLock(true);
             }
         });
 
-        // --- MAP VARIABLES ---
+        // --- MAP VARIABLES & ICON ---
         let mapInstance = null;
         let mapMarker = null;
         let mapPolyline = null;
-        let isMapCentered = false; // Controls initial zoom
+        let isMapCentered = false;
 
-        // Custom Paraglider SVG Icon (Data URI)
         const PARAGLIDER_SVG = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
             <path d="M4 24 C4 10 32 4 32 4 C32 4 60 10 60 24 C60 28 54 30 32 26 C10 30 4 28 4 24 Z" fill="#06b6d4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
@@ -705,88 +744,40 @@
         const pilotIcon = L.icon({
             iconUrl: 'data:image/svg+xml;base64,' + btoa(PARAGLIDER_SVG),
             iconSize: [48, 48],
-            iconAnchor: [24, 38], // Anchored near the pilot (approx bottom center of visual mass)
+            iconAnchor: [24, 38], 
             popupAnchor: [0, -40]
         });
 
         // --- MAP INITIALIZATION ---
         function initMap() {
             if (mapInstance) return;
-            
-            // Create Map
-            mapInstance = L.map('map', {
-                zoomControl: false, // Cleaner UI
-                attributionControl: false
-            }).setView([0, 0], 2);
-
-            // OpenStreetMap Tiles
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-            }).addTo(mapInstance);
-
-            // Pilot Marker (Paraglider Icon)
-            mapMarker = L.marker([0,0], {
-                icon: pilotIcon,
-                zIndexOffset: 1000 // Ensure pilot is always on top
-            }).addTo(mapInstance);
-
-            // Flight Path (Blue Neon Line)
-            mapPolyline = L.polyline([], {
-                color: '#3b82f6', // Tailwind blue-500
-                weight: 4,
-                opacity: 0.8
-            }).addTo(mapInstance);
-
-            // CRITICAL FIX: Force resize calculation after init
-            setTimeout(() => {
-                mapInstance.invalidateSize();
-            }, 500);
+            mapInstance = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapInstance);
+            mapMarker = L.marker([0,0], { icon: pilotIcon, zIndexOffset: 1000 }).addTo(mapInstance);
+            mapPolyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(mapInstance);
+            setTimeout(() => { mapInstance.invalidateSize(); }, 500);
         }
 
         function updateMap(lat, lon, vario) {
             if (!mapInstance || !lat || !lon) return;
-
             const latLng = [lat, lon];
-            
-            // Update Marker Position
             mapMarker.setLatLng(latLng);
-            
-            // Add to Track
             mapPolyline.addLatLng(latLng);
 
-            // --- THERMAL MARKERS (INTEGRATED RADAR) ---
-            let tColor = '#6b7280'; // Gray (Neutral)
-            let tRadius = 2;
-            let tOpacity = 0.5;
-
-            if (vario > 2.0) { tColor = '#d8b4fe'; tRadius = 8; tOpacity = 0.9; } // Strong Lift (Magenta)
-            else if (vario > 0.5) { tColor = '#ef4444'; tRadius = 6; tOpacity = 0.9; } // Moderate Lift (Red)
+            let tColor = '#6b7280'; let tRadius = 2; let tOpacity = 0.5;
+            if (vario > 2.0) { tColor = '#d8b4fe'; tRadius = 8; tOpacity = 0.9; } 
+            else if (vario > 0.5) { tColor = '#ef4444'; tRadius = 6; tOpacity = 0.9; }
             
-            const thermalMarker = L.circleMarker(latLng, {
-                color: tColor,
-                fillColor: tColor,
-                fillOpacity: tOpacity,
-                stroke: false,
-                radius: tRadius
-            }).addTo(mapInstance);
-
+            const thermalMarker = L.circleMarker(latLng, { color: tColor, fillColor: tColor, fillOpacity: tOpacity, stroke: false, radius: tRadius }).addTo(mapInstance);
             appState.mapThermalMarkers.push(thermalMarker);
 
-            // Limit buffer to 120 points to prevent lag
             if (appState.mapThermalMarkers.length > 120) {
                 const oldMarker = appState.mapThermalMarkers.shift();
                 mapInstance.removeLayer(oldMarker);
             }
 
-            // SMART ZOOM & CENTERING LOGIC
-            if (!isMapCentered) {
-                // First Fix: Hard Zoom (Jump) to level 17
-                mapInstance.setView(latLng, 17);
-                isMapCentered = true;
-            } else {
-                // Continuous Tracking: Smooth Pan
-                mapInstance.panTo(latLng);
-            }
+            if (!isMapCentered) { mapInstance.setView(latLng, 17); isMapCentered = true; } 
+            else { mapInstance.panTo(latLng); }
         }
 
         // --- SETTINGS LOGIC ---
@@ -794,6 +785,32 @@
             const container = $('settings-content');
             container.innerHTML = '';
 
+            // 1. DASHBOARD CONFIG SECTION
+            let dashboardHtml = `
+            <div class="setting-group">
+                <div class="setting-header">
+                    <span style="color:var(--neon-blue); font-weight:bold;">Personalizar Pantalla</span>
+                </div>
+                <div class="layout-grid-config">`;
+            
+            appState.layout.forEach((currentKey, idx) => {
+                let optionsHtml = '';
+                for (const [key, val] of Object.entries(WIDGETS_REGISTRY)) {
+                    optionsHtml += `<option value="${key}" ${key === currentKey ? 'selected' : ''}>${val.label}</option>`;
+                }
+                
+                dashboardHtml += `
+                    <div class="layout-slot">
+                        <span class="slot-label">Posición ${idx + 1}</span>
+                        <select class="slot-select" onchange="updateLayout(${idx}, this.value)">
+                            ${optionsHtml}
+                        </select>
+                    </div>`;
+            });
+            dashboardHtml += `</div></div>`;
+            container.innerHTML += dashboardHtml;
+
+            // 2. ALERTS CONFIG SECTION
             appState.settings.alerts.forEach((alert) => {
                 const isLowAlt = alert.type === 'ALTITUDE_LOW';
                 const title = isLowAlt ? '⚠️ Baja Altitud' : '⬇️ Descenso Fuerte';
@@ -837,6 +854,10 @@
             });
         }
 
+        window.updateLayout = (index, key) => {
+            appState.layout[index] = key;
+        };
+
         window.updateSetting = (id, field, value) => {
             const alert = appState.settings.alerts.find(a => a.id === id);
             if (alert) {
@@ -847,373 +868,174 @@
 
         window.saveSettingsAndClose = () => {
             localStorage.setItem('av_settings', JSON.stringify(appState.settings));
+            localStorage.setItem('av_layout', JSON.stringify(appState.layout));
+            renderDashboard(); // Re-render the grid immediately
             toggleModal('modal-settings', false);
         };
 
         // --- MATH UTILS ---
         function haversine(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // metres
+            const R = 6371e3; 
             const φ1 = lat1 * Math.PI/180;
             const φ2 = lat2 * Math.PI/180;
             const Δφ = (lat2-lat1) * Math.PI/180;
             const Δλ = (lon2-lon1) * Math.PI/180;
-
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                    Math.cos(φ1) * Math.cos(φ2) *
-                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
         // --- GEOCODING UTIL ---
         async function fetchLocationName(lat, lon) {
             try {
-                // Use OpenStreetMap Nominatim
-                // Zoom 12 captures village/town/city level
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);
                 if(!res.ok) throw new Error("Net Err");
                 const data = await res.json();
-                
-                // Prioritize readable names
                 const a = data.address;
-                if(a) {
-                     return a.village || a.town || a.city || a.hamlet || a.mountain_pass || a.county || "Zona de Vuelo";
-                }
+                if(a) return a.village || a.town || a.city || a.hamlet || a.mountain_pass || a.county || "Zona de Vuelo";
                 return data.display_name ? data.display_name.split(',')[0] : `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
-            } catch(e) {
-                return `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
-            }
+            } catch(e) { return `${lat.toFixed(3)}, ${lon.toFixed(3)}`; }
         }
 
         // --- METEO LOGIC ---
         function analyzeFlightConditions(wind, gusts, rain, cloudCover) {
-            // RED: Danger
-            if (wind > 25) return { color: '#ef4444', status: 'PELIGRO', msg: "¡PELIGRO! Viento base excesivo (>25km/h). Alto riesgo de accidente o blowback. NO DESPEGAR." };
-            if (gusts > (wind + 15)) return { color: '#ef4444', status: 'PELIGRO', msg: "¡PELIGRO! Turbulencia severa. La diferencia entre base y ráfaga supera los 15km/h." };
-            if (rain > 0) return { color: '#ef4444', status: 'LLUVIA', msg: "Lluvia detectada. Volar mojado destruye el perfil del ala y causa pérdida. Aterriza inmediatamente." };
-
-            // YELLOW: Caution
-            if (wind >= 20 && wind <= 25) return { color: '#facc15', status: 'PRECAUCIÓN', msg: "Condiciones fuertes (20-25km/h). Solo para pilotos muy experimentados y velas adecuadas." };
-            if (gusts > (wind + 10)) return { color: '#facc15', status: 'RACHEADO', msg: "Aire turbulento. Ráfagas fuertes. Se requiere pilotaje activo constante." };
-            if (cloudCover > 90) return { color: '#facc15', status: 'NO VISIBILIDAD', msg: "Cielo muy cubierto. Riesgo de perder visibilidad o nube baja. Mantén referencia visual." };
-
-            // BLUE: Weak
-            if (wind < 5) return { color: '#3b82f6', status: 'DÉBIL', msg: "Viento nulo o muy suave. Requiere despegue a carrera perfecto. Busca térmicas para subir." };
-
-            // GREEN: Ideal
-            return { color: '#a3e635', status: 'IDEAL', msg: "Condiciones excelentes. Viento laminar (5-20km/h) ideal para ladera o térmica. ¡Disfruta el vuelo!" };
+            if (wind > 25) return { color: '#ef4444', status: 'PELIGRO', msg: "¡PELIGRO! Viento >25km/h. NO DESPEGAR." };
+            if (gusts > (wind + 15)) return { color: '#ef4444', status: 'PELIGRO', msg: "¡PELIGRO! Turbulencia severa." };
+            if (rain > 0) return { color: '#ef4444', status: 'LLUVIA', msg: "Lluvia detectada. Aterriza inmediatamente." };
+            if (wind >= 20 && wind <= 25) return { color: '#facc15', status: 'PRECAUCIÓN', msg: "Condiciones fuertes. Solo expertos." };
+            if (gusts > (wind + 10)) return { color: '#facc15', status: 'RACHEADO', msg: "Ráfagas fuertes. Pilotaje activo." };
+            if (cloudCover > 90) return { color: '#facc15', status: 'NO VISIBILIDAD', msg: "Cielo cubierto. Riesgo ODN." };
+            if (wind < 5) return { color: '#3b82f6', status: 'DÉBIL', msg: "Viento suave. Despegue a carrera." };
+            return { color: '#a3e635', status: 'IDEAL', msg: "Condiciones excelentes." };
         }
 
         async function fetchMeteoData() {
-            const content = $('meteo-data');
-            const loading = $('meteo-loading');
-            
-            loading.style.display = 'block';
-            content.classList.add('hidden');
+            const content = $('meteo-data'); const loading = $('meteo-loading');
+            loading.style.display = 'block'; content.classList.add('hidden');
             $('meteo-location-display').innerText = "📍 Localizando nombre...";
-            
-            if(!navigator.geolocation) {
-                loading.innerText = "GPS no disponible";
-                return;
-            }
+            if(!navigator.geolocation) { loading.innerText = "GPS no disponible"; return; }
 
             navigator.geolocation.getCurrentPosition(async (pos) => {
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                
+                const lat = pos.coords.latitude; const lon = pos.coords.longitude;
                 try {
-                    // 1. Get Location Name
                     const locName = await fetchLocationName(lat, lon);
                     $('meteo-location-display').innerText = "📍 " + locName;
-
-                    // 2. Open-Meteo API Call
                     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation&wind_speed_unit=kmh`;
-                    
                     const res = await fetch(url);
                     if(!res.ok) throw new Error("API Err");
                     const json = await res.json();
                     const cur = json.current;
-                    
-                    // Render Data
                     $('val-wind').innerText = cur.wind_speed_10m;
                     $('val-gusts').innerText = cur.wind_gusts_10m;
                     $('val-temp').innerText = cur.temperature_2m;
                     $('val-cloud').innerText = cur.cloud_cover;
-                    
-                    // Wind Arrow Rotation
                     const rot = cur.wind_direction_10m + 180; 
                     $('wind-arrow').style.transform = `rotate(${rot}deg)`;
-                    
-                    // --- EXPERT ANALYSIS ---
                     const analysis = analyzeFlightConditions(cur.wind_speed_10m, cur.wind_gusts_10m, cur.precipitation, cur.cloud_cover);
-                    
                     $('expert-bar-fill').style.backgroundColor = analysis.color;
                     $('expert-text').innerText = analysis.msg;
-                    $('expert-text').style.color = analysis.color === '#facc15' ? '#fef08a' : analysis.color; // Adjust text yellow for readability
-                    
-                    loading.style.display = 'none';
-                    content.classList.remove('hidden');
-                    
-                } catch(e) {
-                    loading.innerText = "Error cargando meteo. Comprueba conexión.";
-                }
-            }, (err) => {
-                loading.innerText = "Error GPS. Activa ubicación.";
-            });
+                    $('expert-text').style.color = analysis.color === '#facc15' ? '#fef08a' : analysis.color;
+                    loading.style.display = 'none'; content.classList.remove('hidden');
+                } catch(e) { loading.innerText = "Error cargando meteo."; }
+            }, (err) => { loading.innerText = "Error GPS."; });
         }
 
         // --- LOGS LOGIC ---
         function renderLogs() {
-            const container = $('logs-list');
-            container.innerHTML = '';
-            // Load from new key 'glider_flight_history'
+            const container = $('logs-list'); container.innerHTML = '';
             const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
-            
-            if(logs.length === 0) {
-                container.innerHTML = '<div style="text-align:center; color:#666; margin-top:20px;">No hay vuelos registrados</div>';
-                return;
-            }
+            if(logs.length === 0) { container.innerHTML = '<div style="text-align:center; color:#666; margin-top:20px;">No hay vuelos registrados</div>'; return; }
 
-            // Reverse order
             logs.sort((a,b) => b.startTime - a.startTime).forEach((log, index) => {
-                const dateObj = new Date(log.startTime);
-                const dateStr = dateObj.toLocaleDateString();
-                const timeStr = dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                
-                // Format Metrics
+                const dateStr = new Date(log.startTime).toLocaleDateString();
+                const timeStr = new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
                 const durH = Math.floor(log.totalTime / 3600);
                 const durM = Math.floor((log.totalTime % 3600) / 60);
-                const durS = Math.floor(log.totalTime % 60);
-                const durationFmt = `${durH>0?durH+'h ':''}${durM}m ${durS}s`;
-                
+                const durationFmt = `${durH>0?durH+'h ':''}${durM}m`;
                 const distKm = (log.totalDistance / 1000).toFixed(1);
-                const gain = log.gain.toFixed(0);
-
-                const hasRoute = log.route && log.route.length > 0;
-                
-                // Location display
                 const locDisplay = log.location ? `📍 ${log.location}` : '';
 
                 const html = `
                 <div class="log-item">
                     <div class="log-summary" onclick="toggleLogDetails(${index})">
                         <div>
-                            <div class="log-date">
-                                ${dateStr} <span style="font-weight:normal; font-size:0.8em; color:#666">${timeStr}</span>
-                                ${locDisplay ? `<div style="font-size:0.75rem; color:var(--neon-green); margin-top:2px;">${locDisplay}</div>` : ''}
-                            </div>
-                            <div class="log-basic-stats">
-                                <span>⏱️ ${durationFmt}</span>
-                                <span>📏 ${distKm} km</span>
-                            </div>
+                            <div class="log-date">${dateStr} <span style="font-weight:normal; font-size:0.8em; color:#666">${timeStr}</span>${locDisplay ? `<div style="font-size:0.75rem; color:var(--neon-green); margin-top:2px;">${locDisplay}</div>` : ''}</div>
+                            <div class="log-basic-stats"><span>⏱️ ${durationFmt}</span><span>📏 ${distKm} km</span></div>
                         </div>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="color:var(--neon-green)">+${gain}m</span>
+                            <span style="color:var(--neon-green)">+${log.gain.toFixed(0)}m</span>
                             <button class="btn-delete-log" onclick="event.stopPropagation(); deleteLog(${log.startTime})">🗑️</button>
                         </div>
                     </div>
-                    
                     <div id="log-det-${index}" class="log-details">
                         <div class="detail-grid">
-                            <div class="detail-box">
-                                <div class="d-label">Altitud Max</div>
-                                <div class="d-val">${log.maxAlt} <span class="d-unit">m</span></div>
-                            </div>
-                             <div class="detail-box">
-                                <div class="d-label">Alt Despegue</div>
-                                <div class="d-val">${log.takeoffAlt} <span class="d-unit">m</span></div>
-                            </div>
-                            <div class="detail-box">
-                                <div class="d-label">Max Ascenso</div>
-                                <div class="d-val text-green-400">+${log.maxClimb} <span class="d-unit">m/s</span></div>
-                            </div>
-                             <div class="detail-box">
-                                <div class="d-label">Max Descenso</div>
-                                <div class="d-val text-red-400">${log.maxSink} <span class="d-unit">m/s</span></div>
-                            </div>
-                            <div class="detail-box">
-                                <div class="d-label">Velocidad Max</div>
-                                <div class="d-val">${log.maxSpeed} <span class="d-unit">km/h</span></div>
-                            </div>
-                            <div class="detail-box">
-                                <div class="d-label">Vel Promedio</div>
-                                <div class="d-val">${log.avgSpeed} <span class="d-unit">km/h</span></div>
-                            </div>
-                            <div class="detail-box">
-                                <div class="d-label">Dist. Lineal</div>
-                                <div class="d-val">${(log.linearDistance/1000).toFixed(1)} <span class="d-unit">km</span></div>
-                            </div>
+                            <div class="detail-box"><div class="d-label">Alt Max</div><div class="d-val">${log.maxAlt}m</div></div>
+                            <div class="detail-box"><div class="d-label">Max Asc</div><div class="d-val text-green-400">+${log.maxClimb}</div></div>
+                            <div class="detail-box"><div class="d-label">Max Desc</div><div class="d-val text-red-400">${log.maxSink}</div></div>
+                            <div class="detail-box"><div class="d-label">Vel Max</div><div class="d-val">${log.maxSpeed}km/h</div></div>
                         </div>
-                        ${hasRoute ? `
-                        <button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">
-                            🗺️ Ver Mapa
-                        </button>
-                        ` : ''}
+                        ${(log.route && log.route.length > 0) ? `<button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">🗺️ Ver Mapa</button>` : ''}
                     </div>
                 </div>`;
                 container.innerHTML += html;
             });
-
-            container.innerHTML += `
-                <button class="btn-delete-all" onclick="deleteAllLogs()">
-                    ⚠️ Borrar Todo el Historial
-                </button>
-            `;
+            container.innerHTML += `<button class="btn-delete-all" onclick="deleteAllLogs()">⚠️ Borrar Todo</button>`;
         }
         
-        window.toggleLogDetails = (idx) => {
-            const el = $(`log-det-${idx}`);
-            if(el.style.display === 'block') el.style.display = 'none';
-            else el.style.display = 'block';
-        };
-
-        window.deleteLog = (timestamp) => {
-            if(confirm("¿Eliminar este vuelo?")) {
-                let logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
-                logs = logs.filter(l => l.startTime !== timestamp);
-                localStorage.setItem('glider_flight_history', JSON.stringify(logs));
-                renderLogs();
-            }
-        };
-
-        window.deleteAllLogs = () => {
-            if(confirm("¡ATENCIÓN! ¿Borrar TODOS los vuelos? Acción irreversible.")) {
-                localStorage.removeItem('glider_flight_history');
-                renderLogs();
-            }
-        };
+        window.toggleLogDetails = (idx) => { const el = $(`log-det-${idx}`); el.style.display = el.style.display === 'block' ? 'none' : 'block'; };
+        window.deleteLog = (timestamp) => { if(confirm("¿Eliminar vuelo?")) { let logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]'); logs = logs.filter(l => l.startTime !== timestamp); localStorage.setItem('glider_flight_history', JSON.stringify(logs)); renderLogs(); } };
+        window.deleteAllLogs = () => { if(confirm("¿Borrar TODOS?")) { localStorage.removeItem('glider_flight_history'); renderLogs(); } };
         
         // --- REVIEW MAP LOGIC ---
         let reviewMap = null;
-        
         window.viewFlightMap = (startTime) => {
             const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
             const log = logs.find(l => l.startTime === startTime);
-            
-            if(!log || !log.route || log.route.length === 0) {
-                alert("No hay datos de ruta disponibles para este vuelo.");
-                return;
-            }
-            
-            // Show modal
+            if(!log || !log.route || log.route.length === 0) { alert("No hay ruta."); return; }
             $('modal-review').classList.remove('hidden');
-            
-            // Init map if needed or reset
-            if(reviewMap) {
-                reviewMap.remove();
-                reviewMap = null;
-            }
-            
-            // Wait for display:block to take effect for size calculation
+            if(reviewMap) { reviewMap.remove(); reviewMap = null; }
             setTimeout(() => {
-                reviewMap = L.map('review-map-container', {
-                     attributionControl: false
-                }).setView([0,0], 10);
-                
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                }).addTo(reviewMap);
-                
-                // Map route array {lat, lon, a} -> [lat, lon]
+                reviewMap = L.map('review-map-container', { attributionControl: false }).setView([0,0], 10);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(reviewMap);
                 const latlngs = log.route.map(p => [p.lat, p.lon]);
-                
-                // Draw Polyline (Neon Cyan)
-                const polyline = L.polyline(latlngs, {
-                    color: '#06b6d4', // Cyan
-                    weight: 5,
-                    opacity: 0.9
-                }).addTo(reviewMap);
-                
-                // Start/End Markers
+                const polyline = L.polyline(latlngs, { color: '#06b6d4', weight: 5, opacity: 0.9 }).addTo(reviewMap);
                 L.circleMarker(latlngs[0], { color: '#a3e635', radius: 6, fillOpacity: 1 }).bindPopup('Despegue').addTo(reviewMap);
                 L.circleMarker(latlngs[latlngs.length-1], { color: '#ef4444', radius: 6, fillOpacity: 1 }).bindPopup('Aterrizaje').addTo(reviewMap);
-                
-                // Fit bounds
                 reviewMap.fitBounds(polyline.getBounds(), { padding: [50, 50] });
-                
             }, 100);
         };
-        
-        window.closeReviewMap = () => {
-             $('modal-review').classList.add('hidden');
-             if(reviewMap) {
-                 reviewMap.remove();
-                 reviewMap = null;
-             }
-        };
+        window.closeReviewMap = () => { $('modal-review').classList.add('hidden'); if(reviewMap) { reviewMap.remove(); reviewMap = null; } };
 
         function endFlight() {
             if (!appState.flying) return;
-            
-            if(flightTimerInterval) clearInterval(flightTimerInterval); // Stop timer
-
+            if(flightTimerInterval) clearInterval(flightTimerInterval);
             const endTime = Date.now();
             const totalTimeSec = (endTime - appState.startTime) / 1000;
-            
-            // Only save if significant flight (> 10 sec and has track)
             if (totalTimeSec > 10 && appState.fullTrack.length > 1) {
-                
-                // --- 1. Distance Calculations ---
                 let totalDist = 0;
-                for(let i=1; i<appState.fullTrack.length; i++) {
-                    const p1 = appState.fullTrack[i-1];
-                    const p2 = appState.fullTrack[i];
-                    totalDist += haversine(p1.lat, p1.lon, p2.lat, p2.lon);
-                }
-
-                // --- 2. Linear Distance ---
+                for(let i=1; i<appState.fullTrack.length; i++) { totalDist += haversine(appState.fullTrack[i-1].lat, appState.fullTrack[i-1].lon, appState.fullTrack[i].lat, appState.fullTrack[i].lon); }
                 const startPt = appState.fullTrack[0];
-                const endPt = appState.fullTrack[appState.fullTrack.length-1];
-                const linearDist = haversine(startPt.lat, startPt.lon, endPt.lat, endPt.lon);
-
-                // --- 3. Speeds ---
-                const avgSpeed = (totalDist / totalTimeSec) * 3.6; // m/s to km/h
-                const maxSpeed = appState.stats.maxSpeed; // tracked live
-
-                // --- 4. Altimetry ---
-                const takeoffAlt = Math.round(startPt.alt);
-                const maxAlt = appState.stats.maxAlt;
-                const gain = maxAlt - takeoffAlt;
-
+                const linearDist = haversine(startPt.lat, startPt.lon, appState.fullTrack[appState.fullTrack.length-1].lat, appState.fullTrack[appState.fullTrack.length-1].lon);
                 const flightLog = {
-                    startTime: appState.startTime,
-                    endTime: endTime,
-                    totalTime: totalTimeSec,
-                    totalDistance: Math.round(totalDist), // meters
-                    linearDistance: Math.round(linearDist), // meters
-                    maxSpeed: Math.round(maxSpeed),
-                    avgSpeed: parseFloat(avgSpeed.toFixed(1)),
-                    takeoffAlt: takeoffAlt,
-                    maxAlt: maxAlt,
-                    gain: Math.max(0, gain), // Net gain
-                    maxClimb: appState.stats.maxClimb.toFixed(1),
-                    maxSink: appState.stats.maxSink.toFixed(1),
-                    location: appState.startLocation || "Desconocido", // New Location Field
-                    // Route optimization: Save raw for now, simplified to 4 decimals
-                    route: appState.fullTrack.map(p => ({
-                        lat: parseFloat(p.lat.toFixed(5)),
-                        lon: parseFloat(p.lon.toFixed(5)),
-                        a: Math.round(p.alt)
-                    }))
+                    startTime: appState.startTime, endTime: endTime, totalTime: totalTimeSec,
+                    totalDistance: Math.round(totalDist), linearDistance: Math.round(linearDist),
+                    maxSpeed: Math.round(appState.stats.maxSpeed), avgSpeed: parseFloat(((totalDist/totalTimeSec)*3.6).toFixed(1)),
+                    takeoffAlt: Math.round(startPt.alt), maxAlt: appState.stats.maxAlt, gain: Math.max(0, appState.stats.maxAlt - Math.round(startPt.alt)),
+                    maxClimb: appState.stats.maxClimb.toFixed(1), maxSink: appState.stats.maxSink.toFixed(1),
+                    location: appState.startLocation || "Desconocido",
+                    route: appState.fullTrack.map(p => ({ lat: parseFloat(p.lat.toFixed(5)), lon: parseFloat(p.lon.toFixed(5)), a: Math.round(p.alt) }))
                 };
-                
-                // Save to localStorage 'glider_flight_history'
                 const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
                 logs.push(flightLog);
                 localStorage.setItem('glider_flight_history', JSON.stringify(logs));
             }
-            
             location.reload();
         }
 
         // --- GRAPH LOGIC ---
         const altGraphCanvas = $('alt-graph');
         const altGraphCtx = altGraphCanvas.getContext('2d');
-        
         function resizeCanvas() {
             const dpr = window.devicePixelRatio || 1;
-            
-            // Resize Alt Graph
             const graphParent = altGraphCanvas.parentElement;
             altGraphCanvas.width = graphParent.clientWidth * dpr;
             altGraphCanvas.height = graphParent.clientHeight * dpr;
@@ -1225,59 +1047,24 @@
         
         function drawAltGraph() {
             if (!appState.flying) return;
-            
-            const w = altGraphCanvas.logicalWidth;
-            const h = altGraphCanvas.logicalHeight;
-            const ctx = altGraphCtx;
-            
+            const w = altGraphCanvas.logicalWidth; const h = altGraphCanvas.logicalHeight; const ctx = altGraphCtx;
             ctx.clearRect(0, 0, w, h);
-            
             const data = appState.altHistory;
             if(data.length < 2) return;
-            
-            // Find Min/Max for Scaling
             let min = Infinity, max = -Infinity;
-            for(let v of data) {
-                if(v < min) min = v;
-                if(v > max) max = v;
-            }
-            
-            // Add padding to range
-            const range = max - min;
-            const pad = (range === 0) ? 10 : range * 0.2;
-            min -= pad;
-            max += pad;
-            
-            ctx.beginPath();
-            ctx.strokeStyle = '#a3e635'; // Neon Green
-            ctx.lineWidth = 2;
-            
-            // X step
-            const stepX = w / 119; // 120 points max
-            
+            for(let v of data) { if(v < min) min = v; if(v > max) max = v; }
+            const range = max - min; const pad = (range === 0) ? 10 : range * 0.2; min -= pad; max += pad;
+            ctx.beginPath(); ctx.strokeStyle = '#a3e635'; ctx.lineWidth = 2;
+            const stepX = w / 119;
             for(let i=0; i<data.length; i++) {
-                const x = i * stepX;
-                // Invert Y: top is 0
-                const norm = (data[i] - min) / (max - min);
-                const y = h - (norm * h);
-                
-                if(i===0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                const x = i * stepX; const norm = (data[i] - min) / (max - min); const y = h - (norm * h);
+                if(i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             }
             ctx.stroke();
-            
-            // Fill Gradient Effect (optional)
-            ctx.lineTo((data.length-1)*stepX, h);
-            ctx.lineTo(0, h);
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(163, 230, 53, 0.1)';
-            ctx.fill();
-            
-            // Min/Max Labels
-            ctx.fillStyle = '#666';
-            ctx.font = '10px monospace';
-            ctx.fillText(Math.round(max), 2, 10);
-            ctx.fillText(Math.round(min), 2, h-2);
+            ctx.lineTo((data.length-1)*stepX, h); ctx.lineTo(0, h); ctx.closePath();
+            ctx.fillStyle = 'rgba(163, 230, 53, 0.1)'; ctx.fill();
+            ctx.fillStyle = '#666'; ctx.font = '10px monospace';
+            ctx.fillText(Math.round(max), 2, 10); ctx.fillText(Math.round(min), 2, h-2);
         }
 
         // --- KALMAN & FLIGHT LOGIC ---
@@ -1285,124 +1072,82 @@
             constructor(R=1, Q=10) { this.R=R; this.Q=Q; this.x=NaN; this.p=NaN; }
             filter(z) {
                 if(isNaN(this.x)) { this.x=z; this.p=this.Q; return z; }
-                let pp = this.p + this.R;
-                let k = pp / (pp + this.Q);
-                this.x = this.x + k * (z - this.x);
-                this.p = (1-k) * pp;
+                let pp = this.p + this.R; let k = pp / (pp + this.Q);
+                this.x = this.x + k * (z - this.x); this.p = (1-k) * pp;
                 return this.x;
             }
         }
         const altFilter = new KalmanFilter(0.5, 15);
-        let altHistory = [];
-        let sinkStartTime = 0, lastAlertTime = 0;
+        let altHistory = []; let sinkStartTime = 0, lastAlertTime = 0;
 
         function processFlightData(coords, timestamp) {
             const rawAlt = coords.altitude || 0;
             const filteredAlt = altFilter.filter(rawAlt);
-            
             altHistory.push({ t: timestamp, alt: filteredAlt });
             altHistory = altHistory.filter(p => timestamp - p.t < 2000);
             let vario = 0;
-            if (altHistory.length >= 2) {
-                const first = altHistory[0];
-                const last = altHistory[altHistory.length-1];
-                vario = (last.alt - first.alt) / ((last.t - first.t)/1000);
-            }
+            if (altHistory.length >= 2) { vario = (altHistory[altHistory.length-1].alt - altHistory[0].alt) / ((altHistory[altHistory.length-1].t - altHistory[0].t)/1000); }
 
             const speedKmh = (coords.speed || 0) * 3.6;
             let glide = 0;
             if (vario < -0.5 && speedKmh > 5) glide = Math.abs((speedKmh/3.6)/vario);
             
             let finalHeading = 0;
-            if (speedKmh > 5 && coords.heading && !isNaN(coords.heading)) {
-                finalHeading = coords.heading;
-            } else if (appState.sensors.magHeading !== null) {
-                finalHeading = appState.sensors.magHeading;
-            } else if (coords.heading && !isNaN(coords.heading)) {
-                finalHeading = coords.heading; 
-            }
+            if (speedKmh > 5 && coords.heading && !isNaN(coords.heading)) { finalHeading = coords.heading; } 
+            else if (appState.sensors.magHeading !== null) { finalHeading = appState.sensors.magHeading; } 
+            else if (coords.heading && !isNaN(coords.heading)) { finalHeading = coords.heading; }
             appState.flightData.heading = finalHeading;
 
             if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
             appState.flightData.alt = Math.round(filteredAlt);
+            appState.flightData.relAlt = Math.round(filteredAlt - appState.takeoffAlt);
             appState.flightData.vario = parseFloat(vario.toFixed(1));
             appState.flightData.speed = Math.round(speedKmh);
             appState.flightData.glide = glide > 0 && glide < 50 ? glide.toFixed(1) : '--';
-            appState.flightData.lat = coords.latitude;
-            appState.flightData.lon = coords.longitude;
-
-            // Stats Update
+            appState.flightData.lat = coords.latitude; appState.flightData.lon = coords.longitude;
             appState.stats.maxAlt = Math.max(appState.stats.maxAlt, appState.flightData.alt);
             appState.stats.maxClimb = Math.max(appState.stats.maxClimb, vario);
             appState.stats.maxSink = Math.min(appState.stats.maxSink, vario);
             appState.stats.maxSpeed = Math.max(appState.stats.maxSpeed, speedKmh);
-
-            // Alt Graph History (Last 120 points)
             appState.altHistory.push(filteredAlt);
             if(appState.altHistory.length > 120) appState.altHistory.shift();
 
             if (coords.latitude && coords.longitude) {
-                
-                // --- FULL LOG HISTORY (Filtered for memory) ---
+                if (!appState.lastOdometerPos) { appState.lastOdometerPos = { lat: coords.latitude, lon: coords.longitude }; } 
+                else {
+                     const dist = haversine(appState.lastOdometerPos.lat, appState.lastOdometerPos.lon, coords.latitude, coords.longitude);
+                     if (dist > 5) { appState.flightData.totalDistance += dist; appState.lastOdometerPos = { lat: coords.latitude, lon: coords.longitude }; }
+                }
                 const lastLogPt = appState.fullTrack[appState.fullTrack.length-1];
                 let shouldLog = true;
-                if(lastLogPt) {
-                    // Quick crude distance check to avoid heavy haversine per frame
-                    const dLat = Math.abs(coords.latitude - lastLogPt.lat);
-                    const dLon = Math.abs(coords.longitude - lastLogPt.lon);
-                    if(dLat < 0.0001 && dLon < 0.0001) shouldLog = false; 
-                }
-                
-                if(shouldLog) {
-                    appState.fullTrack.push({
-                        lat: coords.latitude,
-                        lon: coords.longitude,
-                        alt: filteredAlt,
-                        t: Date.now()
-                    });
-                }
-
-                // Update Unified Map
+                if(lastLogPt) { if(Math.abs(coords.latitude - lastLogPt.lat) < 0.0001 && Math.abs(coords.longitude - lastLogPt.lon) < 0.0001) shouldLog = false; }
+                if(shouldLog) { appState.fullTrack.push({ lat: coords.latitude, lon: coords.longitude, alt: filteredAlt, t: Date.now() }); }
                 updateMap(coords.latitude, coords.longitude, vario);
             }
-
-            updateUI();
-            drawAltGraph(); // Update Graph
-            audio.update(vario);
-            checkAlerts(appState.flightData);
+            updateUI(); drawAltGraph(); audio.update(vario); checkAlerts(appState.flightData);
         }
 
         // --- AUDIO ENGINE ---
         class AudioEngine {
             constructor() { this.ctx=null; this.osc=null; this.isBeeping=false; }
-            init() { 
-                const AC = window.AudioContext || window.webkitAudioContext;
-                this.ctx = new AC(); this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination);
-            }
+            init() { const AC = window.AudioContext || window.webkitAudioContext; this.ctx = new AC(); this.gain = this.ctx.createGain(); this.gain.connect(this.ctx.destination); }
             playTone(freq, type, dur) {
                 if(!this.ctx) return;
                 const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
                 o.type=type; o.frequency.value=freq; o.connect(g); g.connect(this.gain);
                 g.gain.value=0; g.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime+0.05);
-                o.start();
-                if(dur) { g.gain.linearRampToValueAtTime(0, this.ctx.currentTime+dur); o.stop(this.ctx.currentTime+dur+0.1); }
+                o.start(); if(dur) { g.gain.linearRampToValueAtTime(0, this.ctx.currentTime+dur); o.stop(this.ctx.currentTime+dur+0.1); }
                 return {o, g};
             }
             update(vario) {
                 if(appState.muted) return;
-                if(vario < -2.0) {
-                    this.stopBeep();
-                    if(!this.osc) { const s=this.playTone(200, 'sawtooth'); this.osc=s.o; }
-                    if(this.osc) this.osc.frequency.value = Math.max(100, 300 + (vario*50));
-                } else if(vario > 0.2) {
-                    if(this.osc) { this.osc.stop(); this.osc=null; }
-                    if(!this.isBeeping) { this.isBeeping=true; this.scheduleBeep(vario); }
-                } else { this.stopAll(); }
+                if(vario < -2.0) { this.stopBeep(); if(!this.osc) { const s=this.playTone(200, 'sawtooth'); this.osc=s.o; } if(this.osc) this.osc.frequency.value = Math.max(100, 300 + (vario*50)); } 
+                else if(vario > 0.2) { if(this.osc) { this.osc.stop(); this.osc=null; } if(!this.isBeeping) { this.isBeeping=true; this.scheduleBeep(vario); } } 
+                else { this.stopAll(); }
             }
             scheduleBeep(vario) {
                 if(!this.isBeeping) return;
-                const v = Math.min(vario, 8);
-                const period = Math.max(150, 600 - (v*60));
+                const v = Math.min(vario, 8); const period = Math.max(150, 600 - (v*60));
                 this.playTone(400+(v*100), 'square', period*0.5/1000);
                 this.timer = setTimeout(() => this.scheduleBeep(appState.flightData.vario), period);
             }
@@ -1410,23 +1155,9 @@
             stopAll() { this.stopBeep(); if(this.osc){try{this.osc.stop();}catch(e){} this.osc=null;} }
             playAlert(type) {
                 if(appState.muted) return; this.stopAll();
-                if(type === 'beep') {
-                    const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
-                    o.type='square'; o.frequency.value=1500; o.connect(g); g.connect(this.gain);
-                    const now = this.ctx.currentTime;
-                    g.gain.setValueAtTime(0.3, now); g.gain.setValueAtTime(0, now+0.1);
-                    g.gain.setValueAtTime(0.3, now+0.2); g.gain.setValueAtTime(0, now+0.3);
-                    o.start(now); o.stop(now+0.3);
-                } 
-                else if(type === 'whoop') {
-                    const o=this.ctx.createOscillator(); const g=this.ctx.createGain();
-                    o.type='sine'; o.connect(g); g.connect(this.gain);
-                    const now = this.ctx.currentTime;
-                    o.frequency.setValueAtTime(300, now); o.frequency.exponentialRampToValueAtTime(1200, now+0.4);
-                    g.gain.setValueAtTime(0.5, now); g.gain.exponentialRampToValueAtTime(0.01, now+0.4);
-                    o.start(now); o.stop(now+0.4);
-                }
-                else if(type === 'flatline') { this.playTone(150, 'sawtooth', 0.8); }
+                const now = this.ctx.currentTime;
+                if(type === 'beep') { const o=this.ctx.createOscillator(); const g=this.ctx.createGain(); o.type='square'; o.frequency.value=1500; o.connect(g); g.connect(this.gain); g.gain.setValueAtTime(0.3, now); g.gain.setValueAtTime(0, now+0.1); g.gain.setValueAtTime(0.3, now+0.2); g.gain.setValueAtTime(0, now+0.3); o.start(now); o.stop(now+0.3); } 
+                else if(type === 'whoop') { const o=this.ctx.createOscillator(); const g=this.ctx.createGain(); o.type='sine'; o.connect(g); g.connect(this.gain); o.frequency.setValueAtTime(300, now); o.frequency.exponentialRampToValueAtTime(1200, now+0.4); g.gain.setValueAtTime(0.5, now); g.gain.exponentialRampToValueAtTime(0.01, now+0.4); o.start(now); o.stop(now+0.4); }
                 else { this.playTone(800, 'triangle', 0.6); }
             }
         }
@@ -1437,16 +1168,20 @@
             const d = appState.flightData;
             $('value-vario').innerText = (d.vario>0?'+':'') + d.vario.toFixed(1);
             $('value-vario').className = d.vario > 0.1 ? 'climbing' : (d.vario < -0.1 ? 'sinking' : '');
-            $('value-alt').innerText = d.alt;
-            $('value-speed').innerText = d.speed;
-            $('value-glide').innerText = d.glide;
+            
+            // Dynamic Updates using safe checks for element existence
+            const elAlt = $('value-alt'); if(elAlt) elAlt.innerText = d.alt;
+            const elRel = $('value-rel-alt'); if(elRel) elRel.innerText = d.relAlt;
+            const elSpd = $('value-speed'); if(elSpd) elSpd.innerText = d.speed;
+            const elGld = $('value-glide'); if(elGld) elGld.innerText = d.glide;
+            const elDist = $('value-dist'); if(elDist) elDist.innerText = (d.totalDistance / 1000).toFixed(1);
+            const elHdg = $('value-hdg'); if(elHdg) elHdg.innerText = Math.round(d.heading);
 
             // Update Compass
             const h = d.heading || 0;
             $('compass-needle').style.transform = `rotate(${h}deg)`;
             $('compass-text').innerText = Math.round(h) + '°';
 
-            // Vario Bar
             const max=5, val=Math.max(-max, Math.min(max, d.vario));
             const bar=$('vario-fill');
             if(val>0) { bar.style.bottom='50%'; bar.style.top='auto'; bar.style.height=(val/max*50)+'%'; bar.style.background='var(--neon-green)'; }
@@ -1455,78 +1190,41 @@
 
         function checkAlerts(data) {
             const now = Date.now();
-            let activeAlert = null;
-            let soundToPlay = null;
-
+            let activeAlert = null; let soundToPlay = null;
             appState.settings.alerts.forEach(a => {
                 if(!a.enabled) return;
-                
-                // Low Alt
-                if(a.type === 'ALTITUDE_LOW' && data.alt < a.threshold && data.alt > 0) { 
-                    if (now - lastAlertTime > 5000) {
-                        activeAlert='BAJA ALTITUD'; 
-                        soundToPlay = a.sound; 
-                    }
-                }
-                
-                // Sink Rate
+                if(a.type === 'ALTITUDE_LOW' && data.alt < a.threshold && data.alt > 0) { if (now - lastAlertTime > 5000) { activeAlert='BAJA ALTITUD'; soundToPlay = a.sound; } }
                 if(a.type === 'SINK_RATE') {
                     if (data.vario < a.threshold) {
                          if (!sinkStartTime) sinkStartTime = now;
-                         else if ((now - sinkStartTime)/1000 > (a.duration || 2)) {
-                             if (now - lastAlertTime > 3000) {
-                                activeAlert='DESCENSO FUERTE';
-                                soundToPlay = a.sound;
-                             }
-                         }
-                    } else {
-                        if (data.vario > a.threshold) sinkStartTime = 0;
-                    }
+                         else if ((now - sinkStartTime)/1000 > (a.duration || 2)) { if (now - lastAlertTime > 3000) { activeAlert='DESCENSO FUERTE'; soundToPlay = a.sound; } }
+                    } else { if (data.vario > a.threshold) sinkStartTime = 0; }
                 }
             });
-
-            if(activeAlert && soundToPlay) { 
-                $('alert-overlay').innerText='⚠️ '+activeAlert; 
-                $('alert-overlay').style.display='block'; 
-                audio.playAlert(soundToPlay);
-                lastAlertTime=now; 
-                setTimeout(()=>$('alert-overlay').style.display='none', 2500); 
-            }
+            if(activeAlert && soundToPlay) { $('alert-overlay').innerText='⚠️ '+activeAlert; $('alert-overlay').style.display='block'; audio.playAlert(soundToPlay); lastAlertTime=now; setTimeout(()=>$('alert-overlay').style.display='none', 2500); }
         }
 
         function initFlightSystem() {
             audio.init();
-            initMap(); // Initialize Leaflet
-            isMapCentered = false; // Reset zoom logic
+            initMap();
+            isMapCentered = false;
+            // Ensure Dashboard is rendered
+            renderDashboard();
 
-            // Start Wake Lock
             manageWakeLock(true);
-
-            // Start Clock Timer
             if(flightTimerInterval) clearInterval(flightTimerInterval);
             flightTimerInterval = setInterval(updateFlightClock, 1000);
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
-                 try {
-                     DeviceOrientationEvent.requestPermission().then(response => {
-                        if(response === 'granted') { startSensors(); }
-                        else { $('error-console').innerText += "\nPermiso Orientación Denegado"; }
-                     });
-                 } catch(e){ $('error-console').innerText += "\nErr Permiso: "+e; }
+                 try { DeviceOrientationEvent.requestPermission().then(response => { if(response === 'granted') { startSensors(); } }); } catch(e){}
             } else { startSensors(); }
 
             $('screen-start').classList.add('hidden');
             $('screen-hud').classList.remove('hidden'); $('screen-hud').classList.add('flex');
             
-            appState.flying = true;
-            appState.startTime = Date.now();
+            appState.flying = true; appState.startTime = Date.now();
             appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 };
-            appState.takeoffAlt = null;
-            appState.fullTrack = []; // Reset tracklog
-            appState.altHistory = []; // Reset Graph
-            appState.startLocation = null; // Reset location
-            appState.mapThermalMarkers = []; // Reset thermal markers
-            
+            appState.takeoffAlt = null; appState.fullTrack = []; appState.altHistory = []; appState.startLocation = null; appState.mapThermalMarkers = []; appState.flightData.totalDistance = 0; appState.lastOdometerPos = null;
             resizeCanvas(); 
             
             if('geolocation' in navigator) {
@@ -1534,21 +1232,10 @@
                 navigator.geolocation.watchPosition(
                     pos => {
                         $('gps-status').innerText = "GPS: OK"; $('gps-status').style.color='var(--neon-green)';
-                        
-                        // --- SAT & ACCURACY ESTIMATION ---
                         const acc = pos.coords.accuracy || 50;
                         const sats = acc <= 5 ? 12 : (acc <= 10 ? 10 : (acc <= 20 ? 7 : 4));
-                        const satEl = $('sat-status');
-                        satEl.innerText = `SAT: ${sats}`;
-                        satEl.style.color = sats >= 10 ? 'var(--neon-green)' : (sats >= 7 ? '#eab308' : 'var(--text-gray)');
-                        
-                        // --- REVERSE GEOCODING (ONCE) ---
-                        if (!appState.startLocation && acc < 100) {
-                            appState.startLocation = "Obteniendo..."; // Prevent multi-calls
-                            fetchLocationName(pos.coords.latitude, pos.coords.longitude)
-                                .then(loc => appState.startLocation = loc);
-                        }
-
+                        const satEl = $('sat-status'); satEl.innerText = `SAT: ${sats}`; satEl.style.color = sats >= 10 ? 'var(--neon-green)' : (sats >= 7 ? '#eab308' : 'var(--text-gray)');
+                        if (!appState.startLocation && acc < 100) { appState.startLocation = "Obteniendo..."; fetchLocationName(pos.coords.latitude, pos.coords.longitude).then(loc => appState.startLocation = loc); }
                         processFlightData(pos.coords, pos.timestamp);
                     },
                     err => { $('gps-status').innerText = "GPS Error"; $('gps-status').style.color='var(--neon-red)'; $('gps-status').classList.add('error-clickable'); $('gps-status').onclick = () => location.reload(); },
@@ -1559,15 +1246,8 @@
 
         function startSensors() {
             window.addEventListener('deviceorientation', (e) => {
-                if (e.webkitCompassHeading) {
-                    appState.sensors.magHeading = e.webkitCompassHeading;
-                    const st = $('compass-status');
-                    if(st.innerText !== "MAG: OK") { st.innerText = "MAG: OK"; st.style.color = 'var(--neon-green)'; }
-                } 
-                else if (e.alpha !== null) {
-                     appState.sensors.magHeading = 360 - e.alpha; 
-                     $('compass-status').innerText = "MAG: OK";
-                }
+                if (e.webkitCompassHeading) { appState.sensors.magHeading = e.webkitCompassHeading; $('compass-status').innerText = "MAG: OK"; $('compass-status').style.color = 'var(--neon-green)'; } 
+                else if (e.alpha !== null) { appState.sensors.magHeading = 360 - e.alpha; $('compass-status').innerText = "MAG: OK"; }
             });
         }
 
@@ -1585,9 +1265,10 @@
             if(s && id==='modal-logs') renderLogs();
         }
         
-        for(let i=1; i<=4; i++) { 
-            $('ticks-container').innerHTML += `<div class="tick" style="top:${50-i*10}%"></div><div class="tick" style="top:${50+i*10}%"></div>`; 
-        }
+        for(let i=1; i<=4; i++) { $('ticks-container').innerHTML += `<div class="tick" style="top:${50-i*10}%"></div><div class="tick" style="top:${50+i*10}%"></div>`; }
+        
+        // Initial Render of Dashboard (Empty or Default)
+        renderDashboard();
     </script>
 </body>
 </html>
