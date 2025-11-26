@@ -66,9 +66,14 @@
         /* --- GLOBAL SETTINGS BUTTON --- */
         #btn-settings {
             position: fixed;
-            left: 15px;
-            /* iOS Safe Area Support */
-            top: max(15px, env(safe-area-inset-top) + 10px);
+            left: 16px; /* Match top-bar padding */
+            /* Vertical Alignment Logic: 
+               .top-bar content height is 50px. Button is 36px. 
+               Centering offset = (50 - 36) / 2 = 7px.
+               Base offset is env(safe-area-inset-top).
+            */
+            top: 7px;
+            top: calc(env(safe-area-inset-top) + 7px);
             z-index: 1000; /* High visibility, but below Modals (2000) */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
         }
