@@ -8,7 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AeroVario Pro (Vanilla)</title>
     
-    <!-- 1. LEAFLET CSS (FIRST) -->
+    <!-- 1. LEAFLET CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
     <style>
@@ -66,9 +66,9 @@
         /* --- GLOBAL SETTINGS BUTTON --- */
         #btn-settings {
             position: fixed;
-            left: 16px; /* Match top-bar padding */
+            left: 16px; 
             top: calc(env(safe-area-inset-top) + 7px);
-            z-index: 3000; /* Increased to 3000 to be above everything */
+            z-index: 3000; 
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
         }
 
@@ -712,15 +712,26 @@
                     </div>
                 </div>
 
-                <div class="meteo-grid">
-                    <div class="meteo-card">
-                        <div class="label">Temperatura</div>
-                        <div class="value font-mono"><span id="val-temp">0</span>°C</div>
+                <!-- TEMP CARD (NEW SPLIT DESIGN) -->
+                <div class="meteo-card" style="width:100%; flex-direction:row; justify-content:space-around; align-items:center; padding:10px;">
+                    <div style="text-align:center;">
+                        <div class="label" style="font-size:0.7rem;">🌡️ SUELO (<span id="val-ground-elev">0</span>m)</div>
+                        <div class="value font-mono"><span id="val-temp-ground">--</span>°C</div>
                     </div>
+                    <div style="width:1px; height:30px; background:#374151;"></div>
+                    <div style="text-align:center;">
+                        <div class="label" style="font-size:0.7rem;">❄️ AQUÍ (<span id="val-pilot-alt">0</span>m)</div>
+                        <div class="value font-mono" style="color:var(--neon-cyan);"><span id="val-temp-air">--</span>°C</div>
+                    </div>
+                </div>
+                <div style="font-size:0.65rem; color:#6b7280; margin-top:-5px; margin-bottom:10px;">*Gradiente adiabático -0.65°C/100m</div>
+
+                <div class="meteo-grid">
                     <div class="meteo-card">
                         <div class="label">Nubes</div>
                         <div class="value font-mono"><span id="val-cloud">0</span>%</div>
                     </div>
+                    <!-- Empty slot for now, maybe add precip later -->
                 </div>
                 
                 <div style="font-size:0.7rem; color:#4b5563; text-align:center; margin-top:10px;">
@@ -782,141 +793,97 @@
         // --- MOVED UP: KalmanFilter Class (Fix ReferenceError) ---
         class KalmanFilter{constructor(r,q){this.r=r;this.q=q;this.x=NaN;this.p=NaN}filter(z){if(isNaN(this.x)){this.x=z;this.p=this.q;return z}let pp=this.p+this.r,k=pp/(pp+this.q);this.x=this.x+k*(z-this.x);this.p=(1-k)*pp;return this.x}}
 
-        // --- VARIO ENGINE (Sensor Fusion & Pressure) ---
+        // --- VARIO ENGINE (SELECTABLE) ---
         class VarioEngine {
             constructor() {
-                this.hasBarometer = false;
-                this.pressureAltitude = 0;
-                this.gpsAltitude = 0;
-                this.fusedAltitude = 0;
+                this.buffer = []; // {t: ms, alt: m}
+                this.windowSize = 2000; // 2 seconds window
                 this.vario = 0;
-                this.verticalAccel = 0;
-                
-                // Filters (Now KalmanFilter is defined)
-                this.kalmanGPS = new KalmanFilter(1, 15); // For GPS (High noise Q)
-                this.kalmanBaro = new KalmanFilter(0.1, 1); // For Baro (Low noise Q)
-                
-                // State for derivative calculation
-                this.lastAlt = null;
-                this.lastTime = null;
-                this.history = []; // Short buffer for smoothing derivative
+                this.altitude = 0;
+                this.verticalAccel = 0; // for kick
+                this.mode = localStorage.getItem('av_vario_mode') || 'gps-pure';
+                this.lastTime = 0;
             }
 
-            async init() {
-                // Try Pressure API
-                if ('PressureSensor' in window) {
-                    try {
-                        const sensor = new PressureSensor({ frequency: 10 });
-                        sensor.addEventListener('reading', () => {
-                            this.hasBarometer = true;
-                            this.updateFromPressure(sensor.pressure, sensor.timestamp);
-                            this.updateStatusUI();
-                        });
-                        sensor.addEventListener('error', (e) => {
-                            console.warn("Pressure Sensor Error:", e);
-                            this.hasBarometer = false;
-                            this.updateStatusUI();
-                        });
-                        sensor.start();
-                        console.log("Pressure Sensor started");
-                    } catch (e) {
-                        console.warn("Pressure Sensor init failed:", e);
-                        this.hasBarometer = false;
-                    }
-                }
-                this.updateStatusUI();
-            }
+            update(alt, time) {
+                this.buffer.push({t: time, alt: alt});
+                const now = time;
+                this.buffer = this.buffer.filter(p => now - p.t <= this.windowSize);
 
-            updateFromPressure(hPa, timestamp) {
-                // Hypsometric formula
-                // h = 44330 * (1 - (p / 1013.25)^(1/5.255))
-                const alt = 44330 * (1 - Math.pow(hPa / 1013.25, 1 / 5.255));
-                this.pressureAltitude = this.kalmanBaro.filter(alt);
-                
-                // Fusion Scenario A: Baro + Accel
-                // Vario = (BaroVario * 0.9) + (AccelIntegration * 0.1)
-                // Note: Full integration is complex, we use a complementary nudge.
-                this.calculateVario(this.pressureAltitude, timestamp || Date.now(), 0.9, 0.1);
-            }
-
-            updateFromGPS(alt, timestamp) {
-                this.gpsAltitude = this.kalmanGPS.filter(alt);
-                
-                if (!this.hasBarometer) {
-                    // Fusion Scenario B: GPS + Accel
-                    // Vario = (GPSVario * 0.8) + (AccelIntegration * 0.2)
-                    // GPS lag is higher, so we trust accel slightly more for instant response.
-                    this.calculateVario(this.gpsAltitude, timestamp, 0.8, 0.2);
-                }
-            }
-            
-            updateFromMotion(accelZ_World) {
-                // accelZ_World is acceleration in Gs roughly (minus 1G ideally)
-                // Filter noise
-                if (Math.abs(accelZ_World) < 0.1) accelZ_World = 0;
-                this.verticalAccel = accelZ_World * 9.81; // Convert G to m/s^2
-            }
-
-            calculateVario(currentAlt, now, sourceFactor, accelFactor) {
-                if (this.lastAlt === null) {
-                    this.lastAlt = currentAlt;
-                    this.lastTime = now;
+                if (this.buffer.length < 2) {
+                    this.altitude = alt;
+                    this.vario = 0;
                     return;
                 }
 
-                const dt = (now - this.lastTime) / 1000;
-                if (dt <= 0) return;
+                // GPS Base Calc (Linear Regression)
+                const gpsVario = this.calculateSlope();
+                const totalAlt = this.buffer.reduce((sum, p) => sum + p.alt, 0);
+                this.altitude = totalAlt / this.buffer.length;
 
-                const rawVario = (currentAlt - this.lastAlt) / dt;
-
-                // FUSION LOGIC:
-                // Primary Source Vario (GPS or Baro) + Predicted Vertical Velocity change from Accel
-                // V_new = V_old + (a * dt)
-                // We assume V_old was close to rawVario previously.
-                // We perform a weighted blend.
-                
-                // accel contribution to velocity change
-                const accelVarioChange = this.verticalAccel * dt;
-                
-                // Blend: Trusted Source Vario vs Inertial Prediction
-                // Ideally: Vario = (MeasuredVario * W1) + ((PreviousVario + AccelChange) * W2)
-                
-                // Simplified for this request:
-                // Just nudging the raw calculation with acceleration trend? 
-                // The prompt asked: Vario = (SourceVario * X) + (AccelIntegrated * Y)
-                
-                // Let's assume AccelIntegrated is a short term velocity estimate.
-                // Without a full strapdown, let's treat it as a trend adjustor.
-                
-                // Better simple logic:
-                // measuredVario is lagging. 
-                // inertialVario = this.vario + (this.verticalAccel * dt);
-                
-                const measuredVario = rawVario;
-                const inertialVario = this.vario + (this.verticalAccel * dt);
-                
-                this.vario = (measuredVario * sourceFactor) + (inertialVario * accelFactor);
-                
-                // Smoothing final result slightly
-                this.lastAlt = currentAlt;
-                this.lastTime = now;
+                // Mode Logic
+                switch(this.mode) {
+                    case 'hybrid':
+                        // Inject kick if accelerating up
+                        if (this.verticalAccel > 0.5) {
+                            this.vario = Math.max(gpsVario, this.verticalAccel * 2); // Boost
+                        } else {
+                            this.vario = gpsVario;
+                        }
+                        break;
+                    case 'imu-fusion':
+                        // Experimental fusion attempt (simplified complementary filter)
+                        // V = V_gps * 0.9 + V_accel_integrated * 0.1
+                        // This is simpler than the complex one that failed, but still offers "fusion"
+                        const dt = (time - this.lastTime) / 1000;
+                        let fused = gpsVario;
+                        if (dt > 0 && dt < 1) {
+                             // Dead reckoning estimate
+                             const inertial = this.vario + (this.verticalAccel * dt);
+                             fused = inertial * 0.98 + gpsVario * 0.02;
+                        }
+                        
+                        if(Math.abs(fused) > 25) { 
+                            this.mode = 'gps-pure'; // Failsafe
+                            alert("Fusión inestable. Cambiando a GPS Puro.");
+                            this.vario = gpsVario;
+                        } else {
+                            this.vario = fused;
+                        }
+                        break;
+                    case 'gps-pure':
+                    default:
+                        // Deadband 0.3
+                        if (Math.abs(gpsVario) < 0.3) this.vario = 0;
+                        else this.vario = gpsVario;
+                        break;
+                }
+                this.lastTime = time;
             }
             
-            getVario() { return parseFloat(this.vario.toFixed(1)); }
-            getAltitude() { return Math.round(this.hasBarometer ? this.pressureAltitude : this.gpsAltitude); }
-
-            updateStatusUI() {
-                const el = $('sens-status');
-                if(el) {
-                    if(this.hasBarometer) {
-                        el.innerText = "SENS: BARO";
-                        el.style.color = 'var(--neon-green)';
-                    } else {
-                        el.innerText = "SENS: GPS+IMU";
-                        el.style.color = '#eab308'; // yellow
-                    }
-                }
+            updateFromMotion(accelZ_World) {
+                // accelZ_World ~ Gs (0 = static)
+                // Filter noise 0.1G
+                if (Math.abs(accelZ_World) < 0.1) accelZ_World = 0;
+                this.verticalAccel = accelZ_World * 9.81; 
             }
+
+            calculateSlope() {
+                let n = this.buffer.length;
+                let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+                let startT = this.buffer[0].t;
+                for (let i = 0; i < n; i++) {
+                    let x = (this.buffer[i].t - startT) / 1000;
+                    let y = this.buffer[i].alt;
+                    sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
+                }
+                let slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+                return isNaN(slope) ? 0 : slope; 
+            }
+
+            getVario() { return this.vario; }
+            getAltitude() { return this.altitude; }
+            setMode(m) { this.mode = m; localStorage.setItem('av_vario_mode', m); }
         }
         
         // --- STATE ---
@@ -948,7 +915,7 @@
             lastOdometerPos: null,
             calibrationBuffer: [],
             windEstimator: null,
-            varioEngine: new VarioEngine() // New Engine
+            varioEngine: new VarioEngine()
         };
         
         // ... (Helper functions getCardinal, animateCompass, lerp, lerpAngle remain the same) ...
@@ -997,14 +964,27 @@
         function updateWindWidget(w){const a=$('map-wind-arrow'),v=$('map-wind-val');if(a&&v){if(w.valid){a.style.opacity='1';a.style.color='var(--neon-green)';a.style.transform=`rotate(${w.direction}deg)`;v.innerText=`${w.speed} km/h`}else{a.style.opacity='0.3';a.style.color='white';v.innerText='?'}}}
 
         // ... (Settings, IGC, Geocoding, Meteo, Logs UI logic remain same) ...
-        function renderSettings(){const c=$('settings-content');c.innerHTML='';let h=`<div class="setting-group"><div class="setting-header"><span style="color:var(--neon-blue);font-weight:bold;">Personalizar Pantalla</span></div><div class="layout-grid-config">`;appState.layout.forEach((curr,i)=>{let o='';for(const[k,v]of Object.entries(WIDGETS_REGISTRY))o+=`<option value="${k}" ${k===curr?'selected':''}>${v.label}</option>`;h+=`<div class="layout-slot"><span class="slot-label">Posición ${i+1}</span><select class="slot-select" onchange="updateLayout(${i},this.value)">${o}</select></div>`});c.innerHTML+=h+`</div></div><div class="setting-group"><div class="setting-header"><span style="color:var(--neon-yellow);font-weight:bold;">Sensibilidad del Vario</span></div><div class="setting-inputs"><div class="input-row"><label>Activar Beep Subida (> m/s)</label><input type="number" step="0.1" min="0.1" max="5.0" value="${appState.settings.liftThreshold||0.2}" onchange="updateGlobalSetting('liftThreshold',parseFloat(this.value))"></div><div class="input-row"><label>Alarma de Tasa (> m/s)</label><input type="number" step="0.1" max="-0.5" min="-10.0" value="${appState.settings.sinkThreshold||-2.0}" onchange="updateGlobalSetting('sinkThreshold',parseFloat(this.value))"></div></div></div>`;appState.settings.alerts.forEach(a=>{const isL=a.type==='ALTITUDE_LOW',t=isL?'⚠️ Baja Altitud':'⬇️ Descenso Fuerte',d=isL?"Alerta sonora continua cuando vuelas por debajo de la altura configurada.":"Alarma de seguridad crítica si tu tasa de caída supera el límite establecido.";c.innerHTML+=`<div class="setting-group"><div class="setting-header"><span style="color:${a.enabled?'var(--neon-green)':'#666'};font-weight:bold;">${t}</span><label class="switch"><input type="checkbox" ${a.enabled?'checked':''} onchange="updateSetting('${a.id}','enabled',this.checked)"><span class="slider round"></span></label></div><div style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;margin-top:-8px;line-height:1.3;">${d}</div>${a.enabled?`<div class="setting-inputs"><div class="input-row"><label>Umbral (${isL?'m':'m/s'})</label><input type="number" value="${a.threshold}" step="${isL?10:0.1}" onchange="updateSetting('${a.id}','threshold',parseFloat(this.value))"></div>${!isL?`<div class="input-row"><label>Duración (seg)</label><input type="number" value="${a.duration||2}" onchange="updateSetting('${a.id}','duration',parseFloat(this.value))"></div>`:''}<div class="input-row"><label>Sonido</label><select onchange="updateSetting('${a.id}','sound',this.value)"><option value="siren" ${a.sound==='siren'?'selected':''}>Sirena</option><option value="beep" ${a.sound==='beep'?'selected':''}>Beep</option><option value="whoop" ${a.sound==='whoop'?'selected':''}>Whoop</option><option value="flatline" ${a.sound==='flatline'?'selected':''}>Plano</option></select></div></div>`:''}</div>`})}
+        function renderSettings(){
+            const c=$('settings-content');c.innerHTML='';
+            const mDesc = {
+                'gps-pure': "Usa solo GPS. 100% fiable, sin errores de gravedad. Tiene un retraso de 1s. Recomendado.",
+                'hybrid': "GPS + Acelerómetro. Detecta el inicio de la subida antes. Buen equilibrio.",
+                'imu-fusion': "Experimental. Fusión matemática compleja. Puede dar errores si no se calibra bien."
+            };
+            const mode = appState.varioEngine.mode;
+            
+            let h=`<div class="setting-group"><div class="setting-header"><span style="color:var(--neon-purple);font-weight:bold;">Motor de Cálculo Vario</span></div><div class="setting-inputs"><div class="input-row"><label>Modo Sensor</label><select onchange="updateVarioMode(this.value)"><option value="gps-pure" ${mode==='gps-pure'?'selected':''}>GPS Puro (Estable)</option><option value="hybrid" ${mode==='hybrid'?'selected':''}>Híbrido (Kick)</option><option value="imu-fusion" ${mode==='imu-fusion'?'selected':''}>IMU Fusión (Exp)</option></select></div><p id="vario-desc" style="font-size:0.7rem;color:#9ca3af;margin-top:8px;line-height:1.3;font-style:italic;">${mDesc[mode]}</p></div></div>`;
+            
+            h+=`<div class="setting-group"><div class="setting-header"><span style="color:var(--neon-blue);font-weight:bold;">Personalizar Pantalla</span></div><div class="layout-grid-config">`;appState.layout.forEach((curr,i)=>{let o='';for(const[k,v]of Object.entries(WIDGETS_REGISTRY))o+=`<option value="${k}" ${k===curr?'selected':''}>${v.label}</option>`;h+=`<div class="layout-slot"><span class="slot-label">Posición ${i+1}</span><select class="slot-select" onchange="updateLayout(${i},this.value)">${o}</select></div>`});c.innerHTML+=h+`</div></div><div class="setting-group"><div class="setting-header"><span style="color:var(--neon-yellow);font-weight:bold;">Sensibilidad del Vario</span></div><div class="setting-inputs"><div class="input-row"><label>Activar Beep Subida (> m/s)</label><input type="number" step="0.1" min="0.1" max="5.0" value="${appState.settings.liftThreshold||0.2}" onchange="updateGlobalSetting('liftThreshold',parseFloat(this.value))"></div><div class="input-row"><label>Alarma de Tasa (> m/s)</label><input type="number" step="0.1" max="-0.5" min="-10.0" value="${appState.settings.sinkThreshold||-2.0}" onchange="updateGlobalSetting('sinkThreshold',parseFloat(this.value))"></div></div></div>`;appState.settings.alerts.forEach(a=>{const isL=a.type==='ALTITUDE_LOW',t=isL?'⚠️ Baja Altitud':'⬇️ Descenso Fuerte',d=isL?"Alerta sonora continua cuando vuelas por debajo de la altura configurada.":"Alarma de seguridad crítica si tu tasa de caída supera el límite establecido.";c.innerHTML+=`<div class="setting-group"><div class="setting-header"><span style="color:${a.enabled?'var(--neon-green)':'#666'};font-weight:bold;">${t}</span><label class="switch"><input type="checkbox" ${a.enabled?'checked':''} onchange="updateSetting('${a.id}','enabled',this.checked)"><span class="slider round"></span></label></div><div style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;margin-top:-8px;line-height:1.3;">${d}</div>${a.enabled?`<div class="setting-inputs"><div class="input-row"><label>Umbral (${isL?'m':'m/s'})</label><input type="number" value="${a.threshold}" step="${isL?10:0.1}" onchange="updateSetting('${a.id}','threshold',parseFloat(this.value))"></div>${!isL?`<div class="input-row"><label>Duración (seg)</label><input type="number" value="${a.duration||2}" onchange="updateSetting('${a.id}','duration',parseFloat(this.value))"></div>`:''}<div class="input-row"><label>Sonido</label><select onchange="updateSetting('${a.id}','sound',this.value)"><option value="siren" ${a.sound==='siren'?'selected':''}>Sirena</option><option value="beep" ${a.sound==='beep'?'selected':''}>Beep</option><option value="whoop" ${a.sound==='whoop'?'selected':''}>Whoop</option><option value="flatline" ${a.sound==='flatline'?'selected':''}>Plano</option></select></div></div>`:''}</div>`})}
+        
+        window.updateVarioMode=(m)=>{appState.varioEngine.setMode(m);const d={ 'gps-pure': "Usa solo GPS. 100% fiable, sin errores de gravedad. Tiene un retraso de 1s. Recomendado.", 'hybrid': "GPS + Acelerómetro. Detecta el inicio de la subida antes. Buen equilibrio.", 'imu-fusion': "Experimental. Fusión matemática compleja. Puede dar errores si no se calibra bien." };$('vario-desc').innerText=d[m]};
         window.updateLayout=(i,k)=>{appState.layout[i]=k};window.updateSetting=(id,f,v)=>{const a=appState.settings.alerts.find(x=>x.id===id);if(a){a[f]=v;if(f==='enabled')renderSettings()}};window.updateGlobalSetting=(k,v)=>{appState.settings[k]=v};window.saveSettingsAndClose=()=>{localStorage.setItem('av_settings',JSON.stringify(appState.settings));localStorage.setItem('av_layout',JSON.stringify(appState.layout));renderDashboard();toggleModal('modal-settings',false)};
         function haversine(l1,n1,l2,n2){const R=6371e3,f1=l1*Math.PI/180,f2=l2*Math.PI/180,df=(l2-l1)*Math.PI/180,dl=(n2-n1)*Math.PI/180,a=Math.sin(df/2)*Math.sin(df/2)+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)*Math.sin(dl/2);return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
         function decimalToIGC(v,lat){const a=Math.abs(v),d=Math.floor(a),m=(a-d)*60,s=d.toString().padStart(lat?2:3,'0'),ms=Math.floor(m).toString().padStart(2,'0'),dm=Math.floor((m%1)*1000).toString().padStart(3,'0');return `${s}${ms}${dm}${lat?(v>=0?'N':'S'):(v>=0?'E':'W')}`}
         function downloadLogIGC(s){const ls=JSON.parse(localStorage.getItem('glider_flight_history')||'[]'),l=ls.find(x=>x.startTime===s);if(!l||!l.route||l.route.length===0){alert("Sin datos");return}const d=new Date(l.startTime),ds=('0'+d.getUTCDate()).slice(-2)+('0'+(d.getUTCMonth()+1)).slice(-2)+d.getUTCFullYear().toString().slice(-2);let c=`AAVP001AeroVarioPro\r\nHFDTE${ds}\r\nHFPLTPILOTAeroVario User\r\nHFDTM100GPSDATUM WGS-84\r\n`;l.route.forEach(p=>{const t=new Date(p.t||l.startTime),tm=('0'+t.getUTCHours()).slice(-2)+('0'+t.getUTCMinutes()).slice(-2)+('0'+t.getUTCSeconds()).slice(-2),al=('00000'+Math.round(p.alt)).slice(-5);c+=`B${tm}${decimalToIGC(p.lat,true)}${decimalToIGC(p.lon,false)}A${al}${al}\r\n`});const b=new Blob([c],{type:'text/plain'}),u=URL.createObjectURL(b),e=document.createElement('a');e.href=u;e.download=`flight_${ds}.igc`;document.body.appendChild(e);e.click();document.body.removeChild(e);URL.revokeObjectURL(u)}
         async function fetchLocationName(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);if(!r.ok)throw 0;const d=await r.json(),a=d.address;if(a)return a.village||a.town||a.city||a.hamlet||a.mountain_pass||a.county||"Zona de Vuelo";return d.display_name?d.display_name.split(',')[0]:`${lat.toFixed(3)}, ${lon.toFixed(3)}`}catch(e){return `${lat.toFixed(3)}, ${lon.toFixed(3)}`}}
         function analyzeFlightConditions(w,g,r,c){if(w>25)return{c:'#ef4444',s:'PELIGRO',m:"¡PELIGRO! Viento >25km/h. NO DESPEGAR."};if(g>(w+15))return{c:'#ef4444',s:'PELIGRO',m:"¡PELIGRO! Turbulencia severa."};if(r>0)return{c:'#ef4444',s:'LLUVIA',m:"Lluvia detectada. Aterriza inmediatamente."};if(w>=20&&w<=25)return{c:'#facc15',s:'PRECAUCIÓN',m:"Condiciones fuertes. Solo expertos."};if(g>(w+10))return{c:'#facc15',s:'RACHEADO',m:"Ráfagas fuertes. Pilotaje activo."};if(c>90)return{c:'#facc15',s:'NO VISIBILIDAD',m:"Cielo cubierto. Riesgo ODN."};if(w<5)return{c:'#3b82f6',s:'DÉBIL',m:"Viento suave. Despegue a carrera."};return{c:'#a3e635',s:'IDEAL',m:"Condiciones excelentes."}}
-        async function fetchMeteoData(){const c=$('meteo-data'),l=$('meteo-loading');l.style.display='block';c.classList.add('hidden');$('meteo-location-display').innerText="📍 Localizando...";if(!navigator.geolocation){l.innerText="GPS no disponible";return}navigator.geolocation.getCurrentPosition(async(p)=>{const la=p.coords.latitude,lo=p.coords.longitude;try{const n=await fetchLocationName(la,lo);$('meteo-location-display').innerText="📍 "+n;const u=`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation&wind_speed_unit=kmh`;const re=await fetch(u);if(!re.ok)throw 0;const j=await re.json(),curr=j.current;$('val-wind').innerText=curr.wind_speed_10m;$('val-gusts').innerText=curr.wind_gusts_10m;$('val-temp').innerText=curr.temperature_2m;$('val-cloud').innerText=curr.cloud_cover;$('wind-arrow').style.transform=`rotate(${curr.wind_direction_10m+180}deg)`;const an=analyzeFlightConditions(curr.wind_speed_10m,curr.wind_gusts_10m,curr.precipitation,curr.cloud_cover);$('expert-bar-fill').style.backgroundColor=an.c;$('expert-text').innerText=an.m;$('expert-text').style.color=an.c==='#facc15'?'#fef08a':an.c;l.style.display='none';c.classList.remove('hidden')}catch(e){l.innerText="Error cargando meteo."}},e=>{l.innerText="Error GPS."})}
+        async function fetchMeteoData(){const c=$('meteo-data'),l=$('meteo-loading');l.style.display='block';c.classList.add('hidden');$('meteo-location-display').innerText="📍 Localizando...";if(!navigator.geolocation){l.innerText="GPS no disponible";return}navigator.geolocation.getCurrentPosition(async(p)=>{const la=p.coords.latitude,lo=p.coords.longitude;try{const n=await fetchLocationName(la,lo);$('meteo-location-display').innerText="📍 "+n;const u=`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation&elevation=nan&wind_speed_unit=kmh`;const re=await fetch(u);if(!re.ok)throw 0;const j=await re.json(),curr=j.current;$('val-wind').innerText=curr.wind_speed_10m;$('val-gusts').innerText=curr.wind_gusts_10m;$('val-temp-ground').innerText=curr.temperature_2m;$('val-cloud').innerText=curr.cloud_cover;$('wind-arrow').style.transform=`rotate(${curr.wind_direction_10m+180}deg)`;$('val-ground-elev').innerText=j.elevation;const pa=appState.flightData.alt||j.elevation,da=Math.max(0,pa-j.elevation),at=curr.temperature_2m-((da/100)*0.65);$('val-pilot-alt').innerText=pa;$('val-temp-air').innerText=at.toFixed(1);const an=analyzeFlightConditions(curr.wind_speed_10m,curr.wind_gusts_10m,curr.precipitation,curr.cloud_cover);$('expert-bar-fill').style.backgroundColor=an.c;$('expert-text').innerText=an.m;$('expert-text').style.color=an.c==='#facc15'?'#fef08a':an.c;l.style.display='none';c.classList.remove('hidden')}catch(e){l.innerText="Error cargando meteo."}},e=>{l.innerText="Error GPS."})}
         // Render Logs function remains exactly as requested in previous step (omitted here for brevity, assume it's the detailed one)
         function renderLogs(){const c=$('logs-list');c.innerHTML='';const logs=JSON.parse(localStorage.getItem('glider_flight_history')||'[]');if(logs.length===0){c.innerHTML='<div style="text-align:center;color:#666;margin-top:20px;">No hay vuelos registrados</div>';return}logs.sort((a,b)=>b.startTime-a.startTime).forEach((l,i)=>{const d=new Date(l.startTime),ds=d.toLocaleDateString(),ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),h=Math.floor(l.totalTime/3600),m=Math.floor((l.totalTime%3600)/60),s=Math.floor(l.totalTime%60),df=`${h>0?('0'+h).slice(-2)+':':''}${('0'+m).slice(-2)}:${('0'+s).slice(-2)}`,dk=(l.totalDistance/1000).toFixed(2),loc=l.location?`📍 ${l.location}`:'';c.innerHTML+=`<div class="log-item"><div class="log-summary" onclick="toggleLogDetails(${i})"><div><div class="log-date">${ds} <span style="font-weight:normal;font-size:0.8em;color:#666">${ts}</span>${loc?`<div style="font-size:0.75rem;color:var(--neon-green);margin-top:2px;">${loc}</div>`:''}</div><div class="log-basic-stats"><span>⏱️ ${df}</span><span>📏 ${dk} km</span></div></div><div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--neon-green)">+${(l.totalAscent||l.gain).toFixed(0)}m</span><button class="btn-delete-log" onclick="event.stopPropagation();deleteLog(${l.startTime})">🗑️</button></div></div><div id="log-det-${i}" class="log-details"><h4 class="stats-section-title">Estadísticas básicas</h4><div class="stats-grid-2col"><div class="stat-item"><div class="stat-val">${new Date(l.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><div class="stat-lbl">🕒 despegue</div></div><div class="stat-item"><div class="stat-val">${new Date(l.endTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><div class="stat-lbl">🕒 aterrizaje</div></div><div class="stat-item"><div class="stat-val">${df}</div><div class="stat-lbl">⏱️ duración</div></div><div class="stat-item"><div class="stat-val">${dk} km</div><div class="stat-lbl">📏 distancia</div></div><div class="stat-item"><div class="stat-val">${l.maxSpeed} km/h</div><div class="stat-lbl">💨 vel. máxima</div></div><div class="stat-item"><div class="stat-val">${l.minSpeed||0} km/h</div><div class="stat-lbl">💨 vel. mínima</div></div><div class="stat-item"><div class="stat-val">${l.avgSpeed} km/h</div><div class="stat-lbl">💨 vel. media</div></div></div><h4 class="stats-section-title">Estadísticas verticales</h4><div class="stats-grid-2col"><div class="stat-item"><div class="stat-val">${l.takeoffAlt} m</div><div class="stat-lbl">⛰️ altitud inicial</div></div><div class="stat-item"><div class="stat-val">${l.landingAlt||'--'} m</div><div class="stat-lbl">⛰️ altitud aterrizaje</div></div><div class="stat-item"><div class="stat-val" style="color:#a3e635">${l.maxClimb} m/s</div><div class="stat-lbl">📈 tasa máx. ascenso</div></div><div class="stat-item"><div class="stat-val" style="color:#ef4444">${l.maxSink} m/s</div><div class="stat-lbl">📉 tasa máx. descenso</div></div><div class="stat-item"><div class="stat-val">${l.maxAlt} m</div><div class="stat-lbl">⬆️ altitud máxima</div></div><div class="stat-item"><div class="stat-val">${l.minAlt||l.takeoffAlt} m</div><div class="stat-lbl">⬇️ altitud mínima</div></div><div class="stat-item"><div class="stat-val">${(l.totalAscent||0).toFixed(0)} m</div><div class="stat-lbl">↗️ ascenso total</div></div><div class="stat-item"><div class="stat-val">${(l.totalDescent||0).toFixed(0)} m</div><div class="stat-lbl">↘️ descenso total</div></div><div class="stat-item"><div class="stat-val">${((l.landingAlt||0)-l.takeoffAlt).toFixed(0)} m</div><div class="stat-lbl">↕️ diferencial</div></div></div>${(l.route&&l.route.length>0)?`<button class="btn-map-view" onclick="viewFlightMap(${l.startTime})">🗺️ Ver Mapa</button><button class="btn-download-igc" onclick="downloadLogIGC(${l.startTime})">📥 Descargar IGC</button>`:''}</div></div>`});c.innerHTML+=`<button class="btn-delete-all" onclick="deleteAllLogs()">⚠️ Borrar Todo</button>`}
         window.toggleLogDetails=(i)=>{const e=$(`log-det-${i}`);e.style.display=e.style.display==='block'?'none':'block'};window.deleteLog=(t)=>{if(confirm("¿Eliminar?")){let l=JSON.parse(localStorage.getItem('glider_flight_history')||'[]');l=l.filter(x=>x.startTime!==t);localStorage.setItem('glider_flight_history',JSON.stringify(l));renderLogs()}};window.deleteAllLogs=()=>{if(confirm("¿Borrar TODO?")){localStorage.removeItem('glider_flight_history');renderLogs()}};
@@ -1023,14 +1003,8 @@
             const ve = appState.varioEngine;
             
             // 1. Feed Engine with raw GPS alt
-            ve.updateFromGPS(c.altitude||0, t);
+            ve.update(c.altitude||0, t);
             
-            // 2. IMU Fusion (Vertical Accel)
-            // We need to calculate vertical accel from raw device motion if available
-            // but we don't have devicemotion listener yet in VarioEngine scope.
-            // Let's assume startSensors does this projection and sets ve.verticalAccel directly or calls updateFromMotion.
-            // For now, VarioEngine uses internal logic.
-
             // Get Fused Data
             const fusedAlt = ve.getAltitude();
             const fusedVario = ve.getVario();
