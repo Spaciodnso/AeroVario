@@ -189,7 +189,7 @@
         .climbing { color: var(--neon-green); }
         .sinking { color: var(--neon-red); }
 
-        /* Artificial Horizon Box (Right Half) */
+        /* Compass Box (Right Half) */
         .horizon-box {
             flex: 1;
             background: #111;
@@ -200,34 +200,42 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            perspective: 600px; /* 3D Depth */
         }
-        .horizon-labels {
-            position: absolute; width: 100%; top: 4px; padding: 0 6px;
-            display: flex; justify-content: space-between;
-            font-size: 0.6rem; color: #6b7280; font-family: monospace; z-index: 10;
+
+        /* Red fixed marker at top */
+        .compass-fixed-marker {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0; 
+            height: 0; 
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid var(--neon-red);
+            z-index: 20;
         }
         
-        /* The Compass Disc (Background) */
-        .ahrs-compass {
-            width: 110px; height: 110px;
+        /* The Rotating Compass Card */
+        .compass-rose {
+            width: 120px; 
+            height: 120px;
             position: absolute;
             top: 50%; left: 50%;
-            margin-top: -55px; margin-left: -55px;
+            margin-top: -60px; margin-left: -60px;
             /* Will be rotated by JS */
             transition: transform 0.1s linear; 
         }
-        
-        /* The Pilot Avatar Container (Foreground) */
-        .ahrs-pilot-stage {
-            width: 100%; height: 100%;
-            display: flex; justify-content: center; align-items: center;
-            /* Will be rotated X/Y/Z by JS */
-            transform-style: preserve-3d;
-        }
-        .ahrs-pilot-icon {
-            width: 64px; height: 64px;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+
+        /* Corner Paraglider Icon */
+        .corner-pilot {
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            width: 30px;
+            height: 30px;
+            opacity: 0.6;
+            z-index: 10;
         }
 
         /* --- VISUALIZATION AREA (UNIFIED MAP + ALT GRAPH) --- */
@@ -559,7 +567,7 @@
                     <div id="ticks-container"></div>
                 </div>
                 
-                <!-- Split Display: Number & Horizon -->
+                <!-- Split Display: Number & Compass -->
                 <div class="vario-split-container">
                     <!-- Digital Number -->
                     <div class="digital-vario-box">
@@ -567,39 +575,58 @@
                         <span id="value-vario" class="font-mono">+0.0</span>
                     </div>
 
-                    <!-- Artificial Horizon (AHRS) -->
+                    <!-- Compass Box (Redesigned) -->
                     <div class="horizon-box">
-                        <div class="horizon-labels">
-                            <span>R:<span id="val-roll">0</span>°</span>
-                            <span>P:<span id="val-pitch">0</span>°</span>
-                        </div>
+                        <!-- Fixed Lubber Line -->
+                        <div class="compass-fixed-marker"></div>
                         
-                        <!-- Compass Background -->
-                        <div id="ahrs-compass" class="ahrs-compass">
-                            <svg viewBox="0 0 100 100" width="100%" height="100%">
-                                <circle cx="50" cy="50" r="48" stroke="#374151" stroke-width="2" fill="none"/>
+                        <!-- Rotating Compass Card -->
+                        <div id="compass-rose" class="compass-rose">
+                            <svg viewBox="0 0 120 120" width="100%" height="100%">
+                                <!-- Outer Ring -->
+                                <circle cx="60" cy="60" r="58" stroke="#374151" stroke-width="1" fill="none"/>
+                                
                                 <!-- Ticks -->
-                                <line x1="50" y1="2" x2="50" y2="10" stroke="#ef4444" stroke-width="2" /> <!-- N -->
-                                <line x1="50" y1="90" x2="50" y2="98" stroke="#6b7280" stroke-width="2" /> <!-- S -->
-                                <line x1="90" y1="50" x2="98" y2="50" stroke="#6b7280" stroke-width="2" /> <!-- E -->
-                                <line x1="2" y1="50" x2="10" y2="50" stroke="#6b7280" stroke-width="2" /> <!-- W -->
-                                <!-- Letters -->
-                                <text x="50" y="22" font-size="12" fill="#ef4444" text-anchor="middle" font-weight="bold">N</text>
-                                <text x="50" y="85" font-size="10" fill="#6b7280" text-anchor="middle">S</text>
-                                <text x="85" y="54" font-size="10" fill="#6b7280" text-anchor="middle">E</text>
-                                <text x="15" y="54" font-size="10" fill="#6b7280" text-anchor="middle">W</text>
+                                <!-- Major (N, E, S, W) -->
+                                <line x1="60" y1="2" x2="60" y2="10" stroke="#ef4444" stroke-width="3" /> <!-- N -->
+                                <line x1="60" y1="110" x2="60" y2="118" stroke="#9ca3af" stroke-width="3" /> <!-- S -->
+                                <line x1="110" y1="60" x2="118" y2="60" stroke="#9ca3af" stroke-width="3" /> <!-- E -->
+                                <line x1="2" y1="60" x2="10" y2="60" stroke="#9ca3af" stroke-width="3" /> <!-- W -->
+                                
+                                <!-- Intermediates (30 deg intervals approx) -->
+                                <!-- We draw them manually or programmatically. Manually for simplicity in static SVG -->
+                                <!-- 30 deg -->
+                                <line x1="89" y1="9" x2="85" y2="16" stroke="#4b5563" stroke-width="1" />
+                                <!-- 60 deg -->
+                                <line x1="109" y1="31" x2="103" y2="35" stroke="#4b5563" stroke-width="1" />
+                                <!-- 120 deg -->
+                                <line x1="109" y1="89" x2="103" y2="85" stroke="#4b5563" stroke-width="1" />
+                                <!-- 150 deg -->
+                                <line x1="89" y1="111" x2="85" y2="104" stroke="#4b5563" stroke-width="1" />
+                                <!-- 210 deg -->
+                                <line x1="31" y1="111" x2="35" y2="104" stroke="#4b5563" stroke-width="1" />
+                                <!-- 240 deg -->
+                                <line x1="11" y1="89" x2="17" y2="85" stroke="#4b5563" stroke-width="1" />
+                                <!-- 300 deg -->
+                                <line x1="11" y1="31" x2="17" y2="35" stroke="#4b5563" stroke-width="1" />
+                                <!-- 330 deg -->
+                                <line x1="31" y1="9" x2="35" y2="16" stroke="#4b5563" stroke-width="1" />
+                                
+                                <!-- Labels -->
+                                <text x="60" y="24" font-size="14" fill="#ef4444" text-anchor="middle" font-weight="bold">N</text>
+                                <text x="60" y="105" font-size="12" fill="#9ca3af" text-anchor="middle">S</text>
+                                <text x="100" y="64" font-size="12" fill="#9ca3af" text-anchor="middle">E</text>
+                                <text x="20" y="64" font-size="12" fill="#9ca3af" text-anchor="middle">W</text>
                             </svg>
                         </div>
                         
-                        <!-- Pilot Stage (3D) -->
-                        <div class="ahrs-pilot-stage">
-                            <div id="ahrs-pilot" class="ahrs-pilot-icon">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-                                    <path d="M4 24 C4 10 32 4 32 4 C32 4 60 10 60 24 C60 28 54 30 32 26 C10 30 4 28 4 24 Z" fill="#06b6d4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
-                                    <path d="M12 26 L28 48 M52 26 L36 48 M32 25 L32 48" stroke="white" stroke-width="1" stroke-linecap="round"/>
-                                    <circle cx="32" cy="50" r="4" fill="#a3e635" stroke="white" stroke-width="1"/>
-                                </svg>
-                            </div>
+                        <!-- Static Corner Pilot Icon -->
+                        <div class="corner-pilot">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+                                <path d="M4 24 C4 10 32 4 32 4 C32 4 60 10 60 24 C60 28 54 30 32 26 C10 30 4 28 4 24 Z" fill="#06b6d4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                                <path d="M12 26 L28 48 M52 26 L36 48 M32 25 L32 48" stroke="white" stroke-width="1" stroke-linecap="round"/>
+                                <circle cx="32" cy="50" r="4" fill="#a3e635" stroke="white" stroke-width="1"/>
+                            </svg>
                         </div>
                     </div>
                 </div>
@@ -1556,7 +1583,16 @@
                     appState.windEstimator = new WindEstimator();
                 }
             }
-            updateUI(); drawAltGraph(); audio.update(vario); checkAlerts(appState.flightData);
+            updateUI();
+            
+            // Only rotate the card if it exists
+            const compassCard = $('compass-rose');
+            if(compassCard) {
+                // To point North to North, the card must rotate OPPOSITE to heading
+                compassCard.style.transform = `rotate(${-finalHeading}deg)`;
+            }
+
+            drawAltGraph(); audio.update(vario); checkAlerts(appState.flightData);
         }
 
         // --- AUDIO ENGINE ---
@@ -1609,45 +1645,10 @@
                 valVario.className = d.vario > 0.1 ? 'climbing' : (d.vario < -0.1 ? 'sinking' : '');
             }
 
-            // 2. Horizon / Compass
-            const compassEl = $('ahrs-compass');
-            if (compassEl) {
-                // Rotate the compass disc opposite to heading
-                compassEl.style.transform = `rotate(${-d.heading}deg)`;
-            }
+            // 2. Horizon - NO LONGER UPDATING 3D PILOT, NOW ROTATING CARD
+            // The compass rotation logic is now inside processFlightData to ensure sync with sensor data
 
-            // 3. Pilot Attitude (Pitch/Roll) with smoothing
-            // Sensors update logic is separate, here we apply the smoothed values
-            // We use simple smoothing factor 0.1
-            const f = 0.1;
-            appState.sensors.pitch = appState.sensors.pitch * (1-f) + appState.sensors.rawPitch * f;
-            appState.sensors.roll = appState.sensors.roll * (1-f) + appState.sensors.rawRoll * f;
-            
-            // Limit visual pitch to avoid flipping
-            const visPitch = Math.max(-45, Math.min(45, appState.sensors.pitch));
-            const visRoll = appState.sensors.roll;
-
-            // Update text debug
-            $('val-roll').innerText = Math.round(visRoll);
-            $('val-pitch').innerText = Math.round(visPitch);
-
-            // Animate Pilot Icon
-            const pilotEl = $('ahrs-pilot');
-            if (pilotEl) {
-                // Roll: Rotate Z
-                // Pitch: Rotate X + Translate Y (to simulate depth)
-                // Note: beta (pitch) is positive when device tilts forward (top down)
-                // We want the horizon line to move UP when we pitch DOWN, or pilot to move down?
-                // Standard AH: Pitch down = Horizon bar goes up.
-                // Here we move the pilot. Pitch down (positive beta) -> Pilot looks down.
-                pilotEl.style.transform = `
-                    rotateZ(${visRoll}deg) 
-                    rotateX(${visPitch}deg) 
-                    translateY(${visPitch * 1.5}px)
-                `;
-            }
-
-            // 4. Dynamic Slots
+            // 3. Dynamic Slots
             const elAlt = $('value-alt'); if(elAlt) elAlt.innerText = d.alt;
             const elRel = $('value-rel-alt'); if(elRel) elRel.innerText = d.relAlt;
             const elSpd = $('value-speed'); if(elSpd) elSpd.innerText = d.speed;
@@ -1655,7 +1656,7 @@
             const elDist = $('value-dist'); if(elDist) elDist.innerText = (d.totalDistance / 1000).toFixed(1);
             const elHdg = $('value-hdg'); if(elHdg) elHdg.innerText = Math.round(d.heading);
 
-            // 5. Vario Bar
+            // 4. Vario Bar
             const max=5, val=Math.max(-max, Math.min(max, d.vario));
             const bar=$('vario-fill');
             if(val>0) { bar.style.bottom='50%'; bar.style.top='auto'; bar.style.height=(val/max*50)+'%'; bar.style.background='var(--neon-green)'; }
