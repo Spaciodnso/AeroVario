@@ -435,6 +435,17 @@
 
         @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         
+        /* CALIBRATION OVERLAY */
+        .calibration-overlay {
+            position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:9000;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+            padding: 20px;
+        }
+        .cal-spinner { width:40px; height:40px; border:4px solid #374151; border-top:4px solid var(--neon-green); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .cal-bar-container { width:80%; height:6px; background:#333; border-radius:3px; margin-top:15px; overflow:hidden; }
+        .cal-bar { height:100%; width:0%; background:var(--neon-green); transition:width 0.1s linear; }
+
         #alert-overlay {
             position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
             background: var(--neon-red); color: black; padding: 8px 16px;
@@ -479,8 +490,16 @@
     </div>
 
     <!-- === HUD SCREEN === -->
-    <div id="screen-hud" class="hidden flex-col safe-area">
+    <div id="screen-hud" class="hidden flex-col safe-area relative">
         <div id="alert-overlay">⚠️ ALARM</div>
+
+        <!-- CALIBRATION OVERLAY -->
+        <div id="calibration-overlay" class="calibration-overlay hidden">
+            <div class="cal-spinner"></div>
+            <h2 style="color:var(--neon-green); margin-bottom:5px;">CALIBRANDO</h2>
+            <p style="color:#9ca3af; font-size:0.9rem;">Mantén el dispositivo quieto...</p>
+            <div class="cal-bar-container"><div id="cal-bar" class="cal-bar"></div></div>
+        </div>
 
         <!-- Top Bar -->
         <div class="top-bar">
@@ -700,7 +719,7 @@
         };
         
         let appState = {
-            flying: false, muted: false, startTime: 0,
+            flying: false, calibrating: false, muted: false, startTime: 0,
             flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0, totalDistance: 0 },
             sensors: { 
                 magHeading: null, 
@@ -715,7 +734,8 @@
             altHistory: [], 
             startLocation: null, 
             mapThermalMarkers: [],
-            lastOdometerPos: null
+            lastOdometerPos: null,
+            calibrationBuffer: [] // To store alt readings during warm-up
         };
 
         // --- DASHBOARD RENDER LOGIC ---
@@ -837,18 +857,22 @@
             if (!mapInstance || !lat || !lon) return;
             const latLng = [lat, lon];
             mapMarker.setLatLng(latLng);
-            mapPolyline.addLatLng(latLng);
-
-            let tColor = '#6b7280'; let tRadius = 2; let tOpacity = 0.5;
-            if (vario > 2.0) { tColor = '#d8b4fe'; tRadius = 8; tOpacity = 0.9; } 
-            else if (vario > 0.5) { tColor = '#ef4444'; tRadius = 6; tOpacity = 0.9; }
             
-            const thermalMarker = L.circleMarker(latLng, { color: tColor, fillColor: tColor, fillOpacity: tOpacity, stroke: false, radius: tRadius }).addTo(mapInstance);
-            appState.mapThermalMarkers.push(thermalMarker);
+            // Only add to map path if flying, not calibrating
+            if (appState.flying) {
+                mapPolyline.addLatLng(latLng);
 
-            if (appState.mapThermalMarkers.length > 120) {
-                const oldMarker = appState.mapThermalMarkers.shift();
-                mapInstance.removeLayer(oldMarker);
+                let tColor = '#6b7280'; let tRadius = 2; let tOpacity = 0.5;
+                if (vario > 2.0) { tColor = '#d8b4fe'; tRadius = 8; tOpacity = 0.9; } 
+                else if (vario > 0.5) { tColor = '#ef4444'; tRadius = 6; tOpacity = 0.9; }
+                
+                const thermalMarker = L.circleMarker(latLng, { color: tColor, fillColor: tColor, fillOpacity: tOpacity, stroke: false, radius: tRadius }).addTo(mapInstance);
+                appState.mapThermalMarkers.push(thermalMarker);
+
+                if (appState.mapThermalMarkers.length > 120) {
+                    const oldMarker = appState.mapThermalMarkers.shift();
+                    mapInstance.removeLayer(oldMarker);
+                }
             }
 
             if (!isMapCentered) { mapInstance.setView(latLng, 17); isMapCentered = true; } 
@@ -1188,6 +1212,15 @@
         function processFlightData(coords, timestamp) {
             const rawAlt = coords.altitude || 0;
             const filteredAlt = altFilter.filter(rawAlt);
+            
+            // If calibrating, collect data for auto-zero but do not proceed with flight stats
+            if (appState.calibrating) {
+                appState.calibrationBuffer.push(filteredAlt);
+                // Also update map with current position so user sees where they are, but don't draw track
+                updateMap(coords.latitude, coords.longitude, 0);
+                return;
+            }
+
             altHistory.push({ t: timestamp, alt: filteredAlt });
             altHistory = altHistory.filter(p => timestamp - p.t < 2000);
             let vario = 0;
@@ -1203,7 +1236,9 @@
             else if (coords.heading && !isNaN(coords.heading)) { finalHeading = coords.heading; }
             appState.flightData.heading = finalHeading;
 
+            // Only update takeoff alt if it wasn't set by calibration (fallback)
             if (appState.takeoffAlt === null) appState.takeoffAlt = filteredAlt;
+            
             appState.flightData.alt = Math.round(filteredAlt);
             appState.flightData.relAlt = Math.round(filteredAlt - appState.takeoffAlt);
             appState.flightData.vario = parseFloat(vario.toFixed(1));
@@ -1245,7 +1280,7 @@
                 return {o, g};
             }
             update(vario) {
-                if(appState.muted) return;
+                if(appState.muted || appState.calibrating) return; // Mute during calibration
                 const liftThresh = appState.settings.liftThreshold || 0.2;
                 const sinkThresh = appState.settings.sinkThreshold || -2.0;
 
@@ -1262,7 +1297,7 @@
             stopBeep() { this.isBeeping=false; clearTimeout(this.timer); }
             stopAll() { this.stopBeep(); if(this.osc){try{this.osc.stop();}catch(e){} this.osc=null;} }
             playAlert(type) {
-                if(appState.muted) return; this.stopAll();
+                if(appState.muted || appState.calibrating) return; this.stopAll();
                 const now = this.ctx.currentTime;
                 if(type === 'beep') { const o=this.ctx.createOscillator(); const g=this.ctx.createGain(); o.type='square'; o.frequency.value=1500; o.connect(g); g.connect(this.gain); g.gain.setValueAtTime(0.3, now); g.gain.setValueAtTime(0, now+0.1); g.gain.setValueAtTime(0.3, now+0.2); g.gain.setValueAtTime(0, now+0.3); o.start(now); o.stop(now+0.3); } 
                 else if(type === 'whoop') { const o=this.ctx.createOscillator(); const g=this.ctx.createGain(); o.type='sine'; o.connect(g); g.connect(this.gain); o.frequency.setValueAtTime(300, now); o.frequency.exponentialRampToValueAtTime(1200, now+0.4); g.gain.setValueAtTime(0.5, now); g.gain.exponentialRampToValueAtTime(0.01, now+0.4); o.start(now); o.stop(now+0.4); }
@@ -1336,6 +1371,7 @@
         }
 
         function checkAlerts(data) {
+            if (appState.calibrating) return; // No alerts during calibration
             const now = Date.now();
             let activeAlert = null; let soundToPlay = null;
             appState.settings.alerts.forEach(a => {
@@ -1351,28 +1387,80 @@
             if(activeAlert && soundToPlay) { $('alert-overlay').innerText='⚠️ '+activeAlert; $('alert-overlay').style.display='block'; audio.playAlert(soundToPlay); lastAlertTime=now; setTimeout(()=>$('alert-overlay').style.display='none', 2500); }
         }
 
+        // --- CALIBRATION LOGIC ---
+        function startCalibrationCountdown() {
+            let progress = 0;
+            const bar = $('cal-bar');
+            const interval = setInterval(() => {
+                progress += 2; // 50 steps * 100ms = 5000ms
+                if (bar) bar.style.width = progress + '%';
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    finishCalibration();
+                }
+            }, 100);
+        }
+
+        function finishCalibration() {
+            // Auto-Zero: Calculate average altitude from buffer
+            if (appState.calibrationBuffer.length > 0) {
+                const sum = appState.calibrationBuffer.reduce((a, b) => a + b, 0);
+                const avg = sum / appState.calibrationBuffer.length;
+                appState.takeoffAlt = avg;
+                console.log("Calibration complete. Takeoff Alt set to: " + avg.toFixed(1) + "m");
+            } else {
+                // Fallback if no GPS data yet
+                console.warn("Calibration finished but no GPS data.");
+                appState.takeoffAlt = 0; 
+            }
+
+            // Switch State
+            appState.calibrating = false;
+            appState.flying = true;
+            appState.startTime = Date.now();
+            
+            // Hide Overlay
+            $('calibration-overlay').classList.add('hidden');
+            
+            // Ready Sound
+            audio.playTone(800, 'sine', 0.1);
+            setTimeout(() => audio.playTone(1200, 'sine', 0.1), 150);
+            setTimeout(() => audio.playTone(1600, 'sine', 0.2), 300);
+            
+            // Start Timer
+            if(flightTimerInterval) clearInterval(flightTimerInterval);
+            flightTimerInterval = setInterval(updateFlightClock, 1000);
+        }
+
         function initFlightSystem() {
             audio.init();
             initMap();
             isMapCentered = false;
-            // Ensure Dashboard is rendered
             renderDashboard();
-
             manageWakeLock(true);
-            if(flightTimerInterval) clearInterval(flightTimerInterval);
-            flightTimerInterval = setInterval(updateFlightClock, 1000);
+            
+            // Reset State for fresh flight
+            appState.flying = false; // Not flying yet, waiting for cal
+            appState.calibrating = true; 
+            appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 };
+            appState.fullTrack = []; appState.altHistory = []; appState.startLocation = null; 
+            appState.mapThermalMarkers = []; appState.flightData.totalDistance = 0; appState.lastOdometerPos = null;
+            appState.calibrationBuffer = [];
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try { DeviceOrientationEvent.requestPermission().then(response => { if(response === 'granted') { startSensors(); } }); } catch(e){}
             } else { startSensors(); }
 
+            // Switch Screen
             $('screen-start').classList.add('hidden');
             $('screen-hud').classList.remove('hidden'); $('screen-hud').classList.add('flex');
-            
-            appState.flying = true; appState.startTime = Date.now();
-            appState.stats = { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 };
-            appState.takeoffAlt = null; appState.fullTrack = []; appState.altHistory = []; appState.startLocation = null; appState.mapThermalMarkers = []; appState.flightData.totalDistance = 0; appState.lastOdometerPos = null;
             resizeCanvas(); 
+
+            // Show Calibration Overlay
+            $('calibration-overlay').classList.remove('hidden');
+            $('cal-bar').style.width = '0%';
+            startCalibrationCountdown();
             
             if('geolocation' in navigator) {
                 $('gps-status').innerText = "GPS: Buscando...";
