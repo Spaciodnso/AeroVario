@@ -349,17 +349,28 @@
         .log-basic-stats { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; display: flex; gap: 10px; }
         
         .log-details { 
-            padding: 0 12px 12px 12px; background: #111; border-top: 1px solid #374151; 
+            padding: 12px; background: #0b0f19; border-top: 1px solid #374151; 
             display: none; animation: slideDown 0.2s ease-out;
         }
         .log-details.open { display: block; }
         
-        .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-        .detail-box { background: #1f2937; padding: 8px; border-radius: 6px; border: 1px solid #374151; }
-        .d-label { font-size: 0.6rem; text-transform: uppercase; color: #6b7280; }
-        .d-val { font-size: 0.9rem; font-weight: bold; color: #f3f4f6; font-family: monospace; }
-        .d-unit { font-size: 0.7rem; color: #6b7280; }
-        
+        /* NEW STATS GRID STYLES */
+        .stats-section-title {
+            color: #6b7280; font-size: 0.8rem; font-weight: bold; margin: 10px 0 6px 0; border-bottom: 1px solid #374151; padding-bottom: 4px;
+        }
+        .stats-grid-2col {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;
+        }
+        .stat-item {
+            display: flex; flex-direction: column;
+        }
+        .stat-val {
+            font-size: 1.1rem; color: #fff; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+        }
+        .stat-lbl {
+            font-size: 0.75rem; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 4px;
+        }
+
         .btn-map-view {
             width: 100%; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid #2563eb;
             padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold; font-size: 0.8rem;
@@ -1140,8 +1151,13 @@
                 const timeStr = new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
                 const durH = Math.floor(log.totalTime / 3600);
                 const durM = Math.floor((log.totalTime % 3600) / 60);
-                const durationFmt = `${durH>0?durH+'h ':''}${durM}m`;
-                const distKm = (log.totalDistance / 1000).toFixed(1);
+                const durS = Math.floor(log.totalTime % 60);
+                const durationFmt = `${durH>0 ? ('0'+durH).slice(-2)+':' : ''}${('0'+durM).slice(-2)}:${('0'+durS).slice(-2)}`;
+                
+                const startTimeFmt = new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+                const endTimeFmt = new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+                const distKm = (log.totalDistance / 1000).toFixed(2);
                 const locDisplay = log.location ? `📍 ${log.location}` : '';
 
                 const html = `
@@ -1152,17 +1168,36 @@
                             <div class="log-basic-stats"><span>⏱️ ${durationFmt}</span><span>📏 ${distKm} km</span></div>
                         </div>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="color:var(--neon-green)">+${log.gain.toFixed(0)}m</span>
+                            <span style="color:var(--neon-green)">+${(log.totalAscent || log.gain).toFixed(0)}m</span>
                             <button class="btn-delete-log" onclick="event.stopPropagation(); deleteLog(${log.startTime})">🗑️</button>
                         </div>
                     </div>
                     <div id="log-det-${index}" class="log-details">
-                        <div class="detail-grid">
-                            <div class="detail-box"><div class="d-label">Alt Max</div><div class="d-val">${log.maxAlt}m</div></div>
-                            <div class="detail-box"><div class="d-label">Max Asc</div><div class="d-val text-green-400">+${log.maxClimb}</div></div>
-                            <div class="detail-box"><div class="d-label">Max Desc</div><div class="d-val text-red-400">${log.maxSink}</div></div>
-                            <div class="detail-box"><div class="d-label">Vel Max</div><div class="d-val">${log.maxSpeed}km/h</div></div>
+                        
+                        <h4 class="stats-section-title">Estadísticas básicas</h4>
+                        <div class="stats-grid-2col">
+                            <div class="stat-item"><div class="stat-val">${startTimeFmt}</div><div class="stat-lbl">🕒 despegue</div></div>
+                            <div class="stat-item"><div class="stat-val">${endTimeFmt}</div><div class="stat-lbl">🕒 aterrizaje</div></div>
+                            <div class="stat-item"><div class="stat-val">${durationFmt}</div><div class="stat-lbl">⏱️ duración</div></div>
+                            <div class="stat-item"><div class="stat-val">${distKm} km</div><div class="stat-lbl">📏 distancia</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.maxSpeed} km/h</div><div class="stat-lbl">💨 vel. máxima</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.minSpeed || 0} km/h</div><div class="stat-lbl">💨 vel. mínima</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.avgSpeed} km/h</div><div class="stat-lbl">💨 vel. media</div></div>
                         </div>
+
+                        <h4 class="stats-section-title">Estadísticas verticales</h4>
+                        <div class="stats-grid-2col">
+                            <div class="stat-item"><div class="stat-val">${log.takeoffAlt} m</div><div class="stat-lbl">⛰️ altitud inicial</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.landingAlt || '--'} m</div><div class="stat-lbl">⛰️ altitud aterrizaje</div></div>
+                            <div class="stat-item"><div class="stat-val text-green-400">${log.maxClimb} m/s</div><div class="stat-lbl">📈 tasa máx. ascenso</div></div>
+                            <div class="stat-item"><div class="stat-val text-red-400">${log.maxSink} m/s</div><div class="stat-lbl">📉 tasa máx. descenso</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.maxAlt} m</div><div class="stat-lbl">⬆️ altitud máxima</div></div>
+                            <div class="stat-item"><div class="stat-val">${log.minAlt || log.takeoffAlt} m</div><div class="stat-lbl">⬇️ altitud mínima</div></div>
+                            <div class="stat-item"><div class="stat-val">${(log.totalAscent || 0).toFixed(0)} m</div><div class="stat-lbl">↗️ ascenso total</div></div>
+                            <div class="stat-item"><div class="stat-val">${(log.totalDescent || 0).toFixed(0)} m</div><div class="stat-lbl">↘️ descenso total</div></div>
+                            <div class="stat-item"><div class="stat-val">${((log.landingAlt || 0) - log.takeoffAlt).toFixed(0)} m</div><div class="stat-lbl">↕️ diferencial</div></div>
+                        </div>
+
                         ${(log.route && log.route.length > 0) ? `
                             <button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">🗺️ Ver Mapa</button>
                             <button class="btn-download-igc" onclick="downloadLogIGC(${log.startTime})">📥 Descargar IGC</button>
@@ -1203,16 +1238,62 @@
             if(flightTimerInterval) clearInterval(flightTimerInterval);
             const endTime = Date.now();
             const totalTimeSec = (endTime - appState.startTime) / 1000;
+            
             if (totalTimeSec > 10 && appState.fullTrack.length > 1) {
                 let totalDist = 0;
-                for(let i=1; i<appState.fullTrack.length; i++) { totalDist += haversine(appState.fullTrack[i-1].lat, appState.fullTrack[i-1].lon, appState.fullTrack[i].lat, appState.fullTrack[i].lon); }
+                let totalAscent = 0;
+                let totalDescent = 0;
+                let minAlt = 99999;
+                let landingAlt = 0;
+                let minSpeed = 999;
+
+                // Loop track to calculate detailed stats
+                if (appState.fullTrack.length > 0) {
+                    minAlt = appState.fullTrack[0].alt;
+                    landingAlt = appState.fullTrack[appState.fullTrack.length-1].alt;
+                }
+
+                for(let i=1; i<appState.fullTrack.length; i++) {
+                    const p1 = appState.fullTrack[i-1];
+                    const p2 = appState.fullTrack[i];
+                    
+                    // Distance
+                    const distSeg = haversine(p1.lat, p1.lon, p2.lat, p2.lon);
+                    totalDist += distSeg;
+                    
+                    // Vertical
+                    const diffAlt = p2.alt - p1.alt;
+                    if (diffAlt > 0) totalAscent += diffAlt;
+                    else totalDescent += Math.abs(diffAlt);
+
+                    if (p2.alt < minAlt) minAlt = p2.alt;
+
+                    // Calc instantaneous speed between points approx (m/s -> km/h)
+                    const timeDiff = (p2.t - p1.t) / 1000;
+                    if (timeDiff > 0) {
+                        const spd = (distSeg / timeDiff) * 3.6;
+                        if (spd < minSpeed && spd > 1) minSpeed = spd; // ignore near 0 noise
+                    }
+                }
+                
+                if (minSpeed === 999) minSpeed = 0;
+
                 const startPt = appState.fullTrack[0];
                 const linearDist = haversine(startPt.lat, startPt.lon, appState.fullTrack[appState.fullTrack.length-1].lat, appState.fullTrack[appState.fullTrack.length-1].lon);
+                
                 const flightLog = {
                     startTime: appState.startTime, endTime: endTime, totalTime: totalTimeSec,
                     totalDistance: Math.round(totalDist), linearDistance: Math.round(linearDist),
-                    maxSpeed: Math.round(appState.stats.maxSpeed), avgSpeed: parseFloat(((totalDist/totalTimeSec)*3.6).toFixed(1)),
-                    takeoffAlt: Math.round(startPt.alt), maxAlt: appState.stats.maxAlt, gain: Math.max(0, appState.stats.maxAlt - Math.round(startPt.alt)),
+                    maxSpeed: Math.round(appState.stats.maxSpeed), 
+                    minSpeed: Math.round(minSpeed),
+                    avgSpeed: parseFloat(((totalDist/totalTimeSec)*3.6).toFixed(1)),
+                    takeoffAlt: Math.round(startPt.alt), 
+                    landingAlt: Math.round(landingAlt),
+                    maxAlt: appState.stats.maxAlt, 
+                    minAlt: Math.round(minAlt),
+                    gain: Math.max(0, appState.stats.maxAlt - Math.round(startPt.alt)),
+                    totalAscent: totalAscent,
+                    totalDescent: totalDescent,
                     maxClimb: appState.stats.maxClimb.toFixed(1), maxSink: appState.stats.maxSink.toFixed(1),
                     location: appState.startLocation || "Desconocido",
                     route: appState.fullTrack.map(p => ({ lat: parseFloat(p.lat.toFixed(5)), lon: parseFloat(p.lon.toFixed(5)), a: Math.round(p.alt), t: p.t }))
