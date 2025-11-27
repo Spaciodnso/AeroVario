@@ -150,8 +150,13 @@
             overflow: hidden;
         }
 
-        /* Section 1: Vario & Bar (Top 30-40%) */
-        .vario-section { display: flex; height: 130px; gap: 8px; flex-shrink: 0; }
+        /* Section 1: Vario & Horizon (Top Area) */
+        .vario-section { 
+            display: flex; 
+            height: 140px; 
+            gap: 8px; 
+            flex-shrink: 0; 
+        }
 
         /* Vario Bar */
         .vario-container {
@@ -166,34 +171,63 @@
         }
         .tick { position: absolute; right: 0; width: 6px; height: 1px; background: #666; }
 
-        /* Digital Vario Box */
+        /* Split Container for Vario Number and Horizon */
+        .vario-split-container {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Digital Vario Box (Left Half) */
         .digital-vario-box {
             flex: 1; background: rgba(17, 24, 39, 0.6); border-radius: 12px;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             border: 1px solid #374151; position: relative; padding: 5px;
         }
-        #value-vario { font-size: 3rem; font-weight: 800; letter-spacing: -2px; line-height: 1; margin-top: 5px; }
+        #value-vario { font-size: 3.5rem; font-weight: 800; letter-spacing: -2px; line-height: 1; margin-top: 5px; }
         .climbing { color: var(--neon-green); }
         .sinking { color: var(--neon-red); }
 
-        /* Compass */
-        .compass-ring {
-            width: 60px; height: 60px; border: 2px solid #374151; border-radius: 50%; position: relative;
-            margin-top: 5px; background: radial-gradient(circle, #1f2937 20%, #000 100%);
-            box-shadow: inset 0 0 10px #000; display: flex; justify-content: center; align-items: center;
+        /* Artificial Horizon Box (Right Half) */
+        .horizon-box {
+            flex: 1;
+            background: #111;
+            border-radius: 12px;
+            border: 1px solid #374151;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 600px; /* 3D Depth */
         }
-        .compass-label { position: absolute; font-size: 9px; font-weight: bold; color: #4b5563; }
-        .lbl-n { top: 2px; left: 50%; transform: translateX(-50%); color: var(--neon-red); }
-        .lbl-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
-        .lbl-e { right: 3px; top: 50%; transform: translateY(-50%); }
-        .lbl-w { left: 3px; top: 50%; transform: translateY(-50%); }
-        .compass-arrow-container { position: absolute; width: 100%; height: 100%; top: 0; left: 0; transition: transform 0.1s linear; }
-        .compass-arrow {
-            width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent;
-            border-bottom: 30px solid var(--neon-green); position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -100%); transform-origin: 50% 100%; filter: drop-shadow(0 0 4px rgba(163,230,53,0.5));
+        .horizon-labels {
+            position: absolute; width: 100%; top: 4px; padding: 0 6px;
+            display: flex; justify-content: space-between;
+            font-size: 0.6rem; color: #6b7280; font-family: monospace; z-index: 10;
         }
-        .compass-value-text { position: absolute; bottom: -12px; font-size: 9px; color: #6b7280; font-family: monospace; }
+        
+        /* The Compass Disc (Background) */
+        .ahrs-compass {
+            width: 110px; height: 110px;
+            position: absolute;
+            top: 50%; left: 50%;
+            margin-top: -55px; margin-left: -55px;
+            /* Will be rotated by JS */
+            transition: transform 0.1s linear; 
+        }
+        
+        /* The Pilot Avatar Container (Foreground) */
+        .ahrs-pilot-stage {
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            /* Will be rotated X/Y/Z by JS */
+            transform-style: preserve-3d;
+        }
+        .ahrs-pilot-icon {
+            width: 64px; height: 64px;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+        }
 
         /* --- VISUALIZATION AREA (UNIFIED MAP + ALT GRAPH) --- */
         .vis-container {
@@ -460,27 +494,57 @@
         </div>
 
         <div class="hud-content">
-            <!-- Section 1: Vario & Compass -->
+            <!-- Section 1: Vario & Horizon -->
             <div class="vario-section">
+                <!-- Left Bar -->
                 <div class="vario-container">
                     <div class="vario-center-line"></div>
                     <div id="vario-fill" class="vario-bar" style="height: 0; top: 50%;"></div>
                     <div id="ticks-container"></div>
                 </div>
-                <div class="digital-vario-box">
-                    <span style="color:#6b7280; font-size:0.6rem; position:absolute; top:5px;">VARIO m/s</span>
-                    <span id="value-vario" class="font-mono">+0.0</span>
-                    
-                    <!-- Digital Compass -->
-                    <div class="compass-ring">
-                        <span class="compass-label lbl-n">N</span>
-                        <span class="compass-label lbl-e">E</span>
-                        <span class="compass-label lbl-s">S</span>
-                        <span class="compass-label lbl-w">W</span>
-                        <div id="compass-needle" class="compass-arrow-container">
-                            <div class="compass-arrow"></div>
+                
+                <!-- Split Display: Number & Horizon -->
+                <div class="vario-split-container">
+                    <!-- Digital Number -->
+                    <div class="digital-vario-box">
+                        <span style="color:#6b7280; font-size:0.6rem; position:absolute; top:5px;">VARIO m/s</span>
+                        <span id="value-vario" class="font-mono">+0.0</span>
+                    </div>
+
+                    <!-- Artificial Horizon (AHRS) -->
+                    <div class="horizon-box">
+                        <div class="horizon-labels">
+                            <span>R:<span id="val-roll">0</span>°</span>
+                            <span>P:<span id="val-pitch">0</span>°</span>
                         </div>
-                        <div id="compass-text" class="compass-value-text">0°</div>
+                        
+                        <!-- Compass Background -->
+                        <div id="ahrs-compass" class="ahrs-compass">
+                            <svg viewBox="0 0 100 100" width="100%" height="100%">
+                                <circle cx="50" cy="50" r="48" stroke="#374151" stroke-width="2" fill="none"/>
+                                <!-- Ticks -->
+                                <line x1="50" y1="2" x2="50" y2="10" stroke="#ef4444" stroke-width="2" /> <!-- N -->
+                                <line x1="50" y1="90" x2="50" y2="98" stroke="#6b7280" stroke-width="2" /> <!-- S -->
+                                <line x1="90" y1="50" x2="98" y2="50" stroke="#6b7280" stroke-width="2" /> <!-- E -->
+                                <line x1="2" y1="50" x2="10" y2="50" stroke="#6b7280" stroke-width="2" /> <!-- W -->
+                                <!-- Letters -->
+                                <text x="50" y="22" font-size="12" fill="#ef4444" text-anchor="middle" font-weight="bold">N</text>
+                                <text x="50" y="85" font-size="10" fill="#6b7280" text-anchor="middle">S</text>
+                                <text x="85" y="54" font-size="10" fill="#6b7280" text-anchor="middle">E</text>
+                                <text x="15" y="54" font-size="10" fill="#6b7280" text-anchor="middle">W</text>
+                            </svg>
+                        </div>
+                        
+                        <!-- Pilot Stage (3D) -->
+                        <div class="ahrs-pilot-stage">
+                            <div id="ahrs-pilot" class="ahrs-pilot-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+                                    <path d="M4 24 C4 10 32 4 32 4 C32 4 60 10 60 24 C60 28 54 30 32 26 C10 30 4 28 4 24 Z" fill="#06b6d4" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                                    <path d="M12 26 L28 48 M52 26 L36 48 M32 25 L32 48" stroke="white" stroke-width="1" stroke-linecap="round"/>
+                                    <circle cx="32" cy="50" r="4" fill="#a3e635" stroke="white" stroke-width="1"/>
+                                </svg>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -638,7 +702,11 @@
         let appState = {
             flying: false, muted: false, startTime: 0,
             flightData: { alt: 0, vario: 0, speed: 0, glide: 0, relAlt: 0, heading: 0, lat: 0, lon: 0, totalDistance: 0 },
-            sensors: { magHeading: null },
+            sensors: { 
+                magHeading: null, 
+                pitch: 0, roll: 0, // Smoothed
+                rawPitch: 0, rawRoll: 0 // Direct
+            },
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 },
             takeoffAlt: null,
             settings: { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('av_settings') || '{}') }, // Merge Defaults with Local
@@ -1206,10 +1274,53 @@
         // --- UI & UTILS ---
         function updateUI() {
             const d = appState.flightData;
-            $('value-vario').innerText = (d.vario>0?'+':'') + d.vario.toFixed(1);
-            $('value-vario').className = d.vario > 0.1 ? 'climbing' : (d.vario < -0.1 ? 'sinking' : '');
             
-            // Dynamic Updates using safe checks for element existence
+            // 1. Digital Vario
+            const valVario = $('value-vario');
+            if (valVario) {
+                valVario.innerText = (d.vario>0?'+':'') + d.vario.toFixed(1);
+                valVario.className = d.vario > 0.1 ? 'climbing' : (d.vario < -0.1 ? 'sinking' : '');
+            }
+
+            // 2. Horizon / Compass
+            const compassEl = $('ahrs-compass');
+            if (compassEl) {
+                // Rotate the compass disc opposite to heading
+                compassEl.style.transform = `rotate(${-d.heading}deg)`;
+            }
+
+            // 3. Pilot Attitude (Pitch/Roll) with smoothing
+            // Sensors update logic is separate, here we apply the smoothed values
+            // We use simple smoothing factor 0.1
+            const f = 0.1;
+            appState.sensors.pitch = appState.sensors.pitch * (1-f) + appState.sensors.rawPitch * f;
+            appState.sensors.roll = appState.sensors.roll * (1-f) + appState.sensors.rawRoll * f;
+            
+            // Limit visual pitch to avoid flipping
+            const visPitch = Math.max(-45, Math.min(45, appState.sensors.pitch));
+            const visRoll = appState.sensors.roll;
+
+            // Update text debug
+            $('val-roll').innerText = Math.round(visRoll);
+            $('val-pitch').innerText = Math.round(visPitch);
+
+            // Animate Pilot Icon
+            const pilotEl = $('ahrs-pilot');
+            if (pilotEl) {
+                // Roll: Rotate Z
+                // Pitch: Rotate X + Translate Y (to simulate depth)
+                // Note: beta (pitch) is positive when device tilts forward (top down)
+                // We want the horizon line to move UP when we pitch DOWN, or pilot to move down?
+                // Standard AH: Pitch down = Horizon bar goes up.
+                // Here we move the pilot. Pitch down (positive beta) -> Pilot looks down.
+                pilotEl.style.transform = `
+                    rotateZ(${visRoll}deg) 
+                    rotateX(${visPitch}deg) 
+                    translateY(${visPitch * 1.5}px)
+                `;
+            }
+
+            // 4. Dynamic Slots
             const elAlt = $('value-alt'); if(elAlt) elAlt.innerText = d.alt;
             const elRel = $('value-rel-alt'); if(elRel) elRel.innerText = d.relAlt;
             const elSpd = $('value-speed'); if(elSpd) elSpd.innerText = d.speed;
@@ -1217,11 +1328,7 @@
             const elDist = $('value-dist'); if(elDist) elDist.innerText = (d.totalDistance / 1000).toFixed(1);
             const elHdg = $('value-hdg'); if(elHdg) elHdg.innerText = Math.round(d.heading);
 
-            // Update Compass
-            const h = d.heading || 0;
-            $('compass-needle').style.transform = `rotate(${h}deg)`;
-            $('compass-text').innerText = Math.round(h) + '°';
-
+            // 5. Vario Bar
             const max=5, val=Math.max(-max, Math.min(max, d.vario));
             const bar=$('vario-fill');
             if(val>0) { bar.style.bottom='50%'; bar.style.top='auto'; bar.style.height=(val/max*50)+'%'; bar.style.background='var(--neon-green)'; }
@@ -1286,8 +1393,18 @@
 
         function startSensors() {
             window.addEventListener('deviceorientation', (e) => {
-                if (e.webkitCompassHeading) { appState.sensors.magHeading = e.webkitCompassHeading; $('compass-status').innerText = "MAG: OK"; $('compass-status').style.color = 'var(--neon-green)'; } 
-                else if (e.alpha !== null) { appState.sensors.magHeading = 360 - e.alpha; $('compass-status').innerText = "MAG: OK"; }
+                // 1. Compass (Heading)
+                if (e.webkitCompassHeading) { 
+                    appState.sensors.magHeading = e.webkitCompassHeading; 
+                    $('compass-status').innerText = "MAG: OK"; $('compass-status').style.color = 'var(--neon-green)'; 
+                } else if (e.alpha !== null) { 
+                    appState.sensors.magHeading = 360 - e.alpha; 
+                    $('compass-status').innerText = "MAG: OK"; 
+                }
+
+                // 2. Horizon (Pitch/Roll)
+                if (e.beta !== null) appState.sensors.rawPitch = e.beta;
+                if (e.gamma !== null) appState.sensors.rawRoll = e.gamma;
             });
         }
 
