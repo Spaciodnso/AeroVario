@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -263,6 +264,24 @@
         .leaflet-marker-icon { filter: none; }
         .leaflet-control-container .leaflet-top { top: 10px; }
         .leaflet-control-container .leaflet-bottom { bottom: 10px; }
+        
+        /* Wind Widget on Map */
+        .wind-map-widget {
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #444;
+            border-radius: 8px;
+            width: 50px; height: 50px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            pointer-events: none;
+            backdrop-filter: blur(2px);
+        }
+        .wind-arrow {
+            font-size: 24px; font-weight: bold;
+            display: inline-block;
+            transition: transform 0.5s ease-out;
+        }
+        .wind-val { font-size: 9px; font-weight: bold; font-family: monospace; margin-top: -2px; }
 
         /* Alt Graph (Bottom Strip) */
         .alt-graph-section {
@@ -275,7 +294,7 @@
             z-index: 20;
         }
         #alt-graph { width: 100%; height: 100%; }
-        /* CHANGED: Label moved to right */
+        /* Label moved to right */
         .graph-label { position: absolute; top: 2px; right: 4px; font-size: 9px; color: #4b5563; font-weight: bold; pointer-events: none; }
 
         /* Info Grid - DYNAMIC SLOTS */
@@ -354,7 +373,7 @@
         }
         .log-details.open { display: block; }
         
-        /* NEW STATS GRID STYLES */
+        /* STATS GRID STYLES */
         .stats-section-title {
             color: #6b7280; font-size: 0.8rem; font-weight: bold; margin: 10px 0 6px 0; border-bottom: 1px solid #374151; padding-bottom: 4px;
         }
@@ -753,8 +772,68 @@
             startLocation: null, 
             mapThermalMarkers: [],
             lastOdometerPos: null,
-            calibrationBuffer: [] // To store alt readings during warm-up
+            calibrationBuffer: [], // To store alt readings during warm-up
+            windEstimator: null // Will instantiate WindEstimator
         };
+        
+        // --- WIND ESTIMATOR CLASS ---
+        class WindEstimator {
+            constructor() {
+                this.buffer = []; // {heading, speed, timestamp}
+                this.windowSize = 45000; // 45 seconds buffer
+                this.minSpeed = 5; // Min speed to consider (km/h)
+                this.lastWind = { direction: 0, speed: 0, valid: false };
+            }
+            
+            add(heading, speed, timestamp) {
+                if (speed < this.minSpeed) return;
+                this.buffer.push({ h: heading, s: speed, t: timestamp });
+                // Prune
+                const cutoff = timestamp - this.windowSize;
+                while(this.buffer.length > 0 && this.buffer[0].t < cutoff) {
+                    this.buffer.shift();
+                }
+            }
+            
+            estimate() {
+                if (this.buffer.length < 20) return this.lastWind;
+                
+                // 1. Detect Turn (Check if we covered 4 quadrants)
+                let q1=false, q2=false, q3=false, q4=false;
+                let maxS = 0; 
+                let minS = 999;
+                let headingAtMin = 0;
+
+                this.buffer.forEach(p => {
+                    if(p.h >= 0 && p.h < 90) q1=true;
+                    if(p.h >= 90 && p.h < 180) q2=true;
+                    if(p.h >= 180 && p.h < 270) q3=true;
+                    if(p.h >= 270 && p.h < 360) q4=true;
+                    
+                    if (p.s > maxS) maxS = p.s;
+                    if (p.s < minS) { minS = p.s; headingAtMin = p.h; }
+                });
+                
+                // If we have data in at least 3 quadrants, assume a turn
+                const quadrants = (q1?1:0)+(q2?1:0)+(q3?1:0)+(q4?1:0);
+                
+                if (quadrants >= 3) {
+                    // Wind Speed = (Vmax - Vmin) / 2
+                    // Wind Direction = Heading where ground speed was Minimal (Headwind)
+                    const windSpeed = (maxS - minS) / 2;
+                    // Filter crazy values
+                    if (windSpeed > 0 && windSpeed < 60) {
+                        this.lastWind = {
+                            speed: Math.round(windSpeed),
+                            direction: Math.round(headingAtMin),
+                            valid: true
+                        };
+                    }
+                }
+                
+                return this.lastWind;
+            }
+        }
 
         // --- DASHBOARD RENDER LOGIC ---
         function renderDashboard() {
@@ -845,6 +924,7 @@
         let mapMarker = null;
         let mapPolyline = null;
         let isMapCentered = false;
+        let windWidgetEl = null;
 
         const PARAGLIDER_SVG = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
@@ -868,6 +948,18 @@
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapInstance);
             mapMarker = L.marker([0,0], { icon: pilotIcon, zIndexOffset: 1000 }).addTo(mapInstance);
             mapPolyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(mapInstance);
+            
+            // Add Wind Widget Control
+            const WindControl = L.Control.extend({
+                onAdd: function(map) {
+                    const div = L.DomUtil.create('div', 'wind-map-widget');
+                    div.innerHTML = `<span id="map-wind-arrow" class="wind-arrow" style="opacity:0.3">⬆</span><span id="map-wind-val" class="wind-val">?</span>`;
+                    return div;
+                },
+                onRemove: function(map) {}
+            });
+            mapInstance.addControl(new WindControl({ position: 'bottomleft' }));
+            
             setTimeout(() => { mapInstance.invalidateSize(); }, 500);
         }
 
@@ -895,6 +987,23 @@
 
             if (!isMapCentered) { mapInstance.setView(latLng, 17); isMapCentered = true; } 
             else { mapInstance.panTo(latLng); }
+        }
+        
+        function updateWindWidget(windData) {
+            const arrow = $('map-wind-arrow');
+            const val = $('map-wind-val');
+            if (arrow && val) {
+                if (windData.valid) {
+                    arrow.style.opacity = '1';
+                    arrow.style.color = 'var(--neon-green)';
+                    arrow.style.transform = `rotate(${windData.direction}deg)`;
+                    val.innerText = `${windData.speed} km/h`;
+                } else {
+                    arrow.style.opacity = '0.3';
+                    arrow.style.color = 'white';
+                    val.innerText = '?';
+                }
+            }
         }
 
         // --- SETTINGS LOGIC ---
@@ -1436,6 +1545,16 @@
                 if(lastLogPt) { if(Math.abs(coords.latitude - lastLogPt.lat) < 0.0001 && Math.abs(coords.longitude - lastLogPt.lon) < 0.0001) shouldLog = false; }
                 if(shouldLog) { appState.fullTrack.push({ lat: coords.latitude, lon: coords.longitude, alt: filteredAlt, t: Date.now() }); }
                 updateMap(coords.latitude, coords.longitude, vario);
+                
+                // --- WIND ESTIMATION UPDATE ---
+                // Only if we have wind estimator
+                if (appState.windEstimator) {
+                    appState.windEstimator.add(finalHeading, speedKmh, Date.now());
+                    const wind = appState.windEstimator.estimate();
+                    updateWindWidget(wind);
+                } else {
+                    appState.windEstimator = new WindEstimator();
+                }
             }
             updateUI(); drawAltGraph(); audio.update(vario); checkAlerts(appState.flightData);
         }
@@ -1620,6 +1739,8 @@
             appState.fullTrack = []; appState.altHistory = []; appState.startLocation = null; 
             appState.mapThermalMarkers = []; appState.flightData.totalDistance = 0; appState.lastOdometerPos = null;
             appState.calibrationBuffer = [];
+            // Init Wind Estimator
+            appState.windEstimator = new WindEstimator();
 
             if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
                  try { DeviceOrientationEvent.requestPermission().then(response => { if(response === 'granted') { startSensors(); } }); } catch(e){}
