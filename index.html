@@ -240,9 +240,11 @@
         /* Small digital readout inside the compass */
         .ios-hdg-readout {
             position: absolute;
-            bottom: 4px; left: 50%; transform: translateX(-50%);
+            bottom: 6px; left: 6px; /* Moved to bottom-left */
             font-family: -apple-system, sans-serif;
-            font-size: 10px; color: #888; font-weight: 500;
+            font-size: 11px; color: #fff; font-weight: 600;
+            text-align: left;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
         }
 
         /* --- VISUALIZATION AREA (UNIFIED MAP + ALT GRAPH) --- */
@@ -578,14 +580,6 @@
                         <!-- Rotating Compass Card -->
                         <div id="ios-compass-card" class="ios-compass-card">
                             <svg viewBox="0 0 100 100" width="100%" height="100%">
-                                <!-- Ticks generation: We need multiple lines.
-                                     Major ticks every 30 deg (long)
-                                     Minor ticks every 2 deg (short) - optional, maybe just every 10 for performance.
-                                     Let's use a simpler static SVG for the card to ensure high performance rotation.
-                                -->
-                                <!-- Outer circle guide -->
-                                <!-- <circle cx="50" cy="50" r="48" stroke="#333" stroke-width="0.5" fill="none"/> -->
-                                
                                 <!-- Major Ticks (N, E, S, W + 30, 60...) -->
                                 <line x1="50" y1="2" x2="50" y2="8" stroke="white" stroke-width="2"/> <!-- N -->
                                 <line x1="50" y1="92" x2="50" y2="98" stroke="white" stroke-width="2"/> <!-- S -->
@@ -607,13 +601,12 @@
                                 <g transform="rotate(20, 50, 50)"><line x1="50" y1="2" x2="50" y2="5" stroke="#555" stroke-width="1"/></g>
                                 <g transform="rotate(40, 50, 50)"><line x1="50" y1="2" x2="50" y2="5" stroke="#555" stroke-width="1"/></g>
                                 <g transform="rotate(50, 50, 50)"><line x1="50" y1="2" x2="50" y2="5" stroke="#555" stroke-width="1"/></g>
-                                <!-- ... repeating for all is tedious in static HTML, keeping it cleaner with just 10s visual filler if needed, but 30s is standard for clear reading on small widgets -->
 
-                                <!-- Labels -->
+                                <!-- Labels (SPANISH) -->
                                 <text x="50" y="22" font-family="-apple-system, sans-serif" font-size="14" fill="#fff" text-anchor="middle" font-weight="500">N</text>
                                 <text x="50" y="88" font-family="-apple-system, sans-serif" font-size="12" fill="#fff" text-anchor="middle">S</text>
                                 <text x="86" y="54" font-family="-apple-system, sans-serif" font-size="12" fill="#fff" text-anchor="middle">E</text>
-                                <text x="14" y="54" font-family="-apple-system, sans-serif" font-size="12" fill="#fff" text-anchor="middle">W</text>
+                                <text x="14" y="54" font-family="-apple-system, sans-serif" font-size="12" fill="#fff" text-anchor="middle">O</text> <!-- Changed W to O -->
                             </svg>
                         </div>
 
@@ -631,7 +624,7 @@
                         </div>
                         
                         <!-- Heading Readout -->
-                        <div class="ios-hdg-readout"><span id="val-hdg-ios">0</span>°</div>
+                        <div id="val-hdg-ios" class="ios-hdg-readout">0° N</div>
                     </div>
                 </div>
             </div>
@@ -807,6 +800,14 @@
             windEstimator: null // Will instantiate WindEstimator
         };
         
+        // --- HELPER FOR SPANISH CARDINALS ---
+        function getCardinal(deg) {
+            const directions = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+            // Shift range so N is centered on 0/360
+            const index = Math.round(((deg %= 360) < 0 ? deg + 360 : deg) / 45) % 8;
+            return directions[index];
+        }
+
         // --- ANIMATION LOOP FOR COMPASS (60FPS) ---
         function animateCompass() {
             if (!appState.flying && !appState.calibrating) {
@@ -834,16 +835,6 @@
             }
             
             // 3. Move Pilot Bubble (Level)
-            // Roll (Gamma) moves X. Tilt Left (Neg) -> Move Left (Neg)
-            // Pitch (Beta) moves Y. Tilt Forward (Pos) -> Move Up (Neg)? 
-            // Standard: Tilt forward (top down) -> Bubble goes UP.
-            // Beta > 0 is sitting up/tilting back usually? depends on device orientation.
-            // In landscape/portrait held up:
-            // Beta is front/back tilt. 
-            // Let's assume holding phone flat:
-            // Tilt phone forward (top goes down) -> Beta increases?
-            // Actually, let's just map straightforward and user can calibrate mental model.
-            
             const maxOffset = 35; // px limit
             const x = Math.max(-maxOffset, Math.min(maxOffset, appState.sensors.smoothRoll * 1.5)); // 1.5 multiplier for sensitivity
             const y = Math.max(-maxOffset, Math.min(maxOffset, appState.sensors.smoothPitch * 1.5));
@@ -853,9 +844,13 @@
                 pilot.style.transform = `translate(${x}px, ${y}px)`;
             }
 
-            // 4. Update Readout
+            // 4. Update Readout (Bottom Left)
             const readout = $('val-hdg-ios');
-            if(readout) readout.innerText = Math.round(appState.sensors.smoothHeading);
+            if(readout) {
+                const h = Math.round(appState.sensors.smoothHeading);
+                const dir = getCardinal(h);
+                readout.innerText = `${h}° ${dir}`;
+            }
 
             requestAnimationFrame(animateCompass);
         }
