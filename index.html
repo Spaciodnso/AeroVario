@@ -630,7 +630,9 @@
             alerts: [
                 { id: 'low_alt', type: 'ALTITUDE_LOW', enabled: false, threshold: 1000, sound: 'beep' },
                 { id: 'sink_alarm', type: 'SINK_RATE', enabled: true, threshold: -2.5, duration: 2, sound: 'siren' }
-            ]
+            ],
+            liftThreshold: 0.2, // Default Start Beeping at +0.2 m/s
+            sinkThreshold: -2.0 // Default Start Buzzing at -2.0 m/s
         };
         
         let appState = {
@@ -639,7 +641,7 @@
             sensors: { magHeading: null },
             stats: { maxAlt: -9999, maxClimb: 0, maxSink: 0, maxSpeed: 0 },
             takeoffAlt: null,
-            settings: JSON.parse(localStorage.getItem('av_settings')) || DEFAULT_SETTINGS,
+            settings: { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('av_settings') || '{}') }, // Merge Defaults with Local
             layout: JSON.parse(localStorage.getItem('av_layout')) || ['alt', 'spd', 'gld', 'tim', 'dst', 'hdg'], // Default Grid
             fullTrack: [],    
             altHistory: [], 
@@ -815,10 +817,32 @@
             dashboardHtml += `</div></div>`;
             container.innerHTML += dashboardHtml;
 
-            // 2. ALERTS CONFIG SECTION
+            // 2. AUDIO THRESHOLDS (VARIO SENSITIVITY) - NEW
+            let sensitivityHtml = `
+            <div class="setting-group">
+                <div class="setting-header">
+                    <span style="color:var(--neon-yellow); font-weight:bold;">Sensibilidad del Vario</span>
+                </div>
+                <div class="setting-inputs">
+                    <div class="input-row">
+                        <label>Activar Beep Subida (> m/s)</label>
+                        <input type="number" step="0.1" min="0.1" max="5.0" value="${appState.settings.liftThreshold || 0.2}" onchange="updateGlobalSetting('liftThreshold', parseFloat(this.value))">
+                    </div>
+                    <div class="input-row">
+                        <label>Alarma de Tasa (> m/s)</label>
+                        <input type="number" step="0.1" max="-0.5" min="-10.0" value="${appState.settings.sinkThreshold || -2.0}" onchange="updateGlobalSetting('sinkThreshold', parseFloat(this.value))">
+                    </div>
+                </div>
+            </div>`;
+            container.innerHTML += sensitivityHtml;
+
+            // 3. ALERTS CONFIG SECTION
             appState.settings.alerts.forEach((alert) => {
                 const isLowAlt = alert.type === 'ALTITUDE_LOW';
                 const title = isLowAlt ? '⚠️ Baja Altitud' : '⬇️ Descenso Fuerte';
+                const desc = isLowAlt
+                    ? "Alerta sonora continua cuando vuelas por debajo de la altura configurada."
+                    : "Alarma de seguridad crítica si tu tasa de caída supera el límite establecido.";
                 const color = alert.enabled ? 'var(--neon-green)' : '#666';
                 
                 const html = `
@@ -830,6 +854,9 @@
                                 onchange="updateSetting('${alert.id}', 'enabled', this.checked)">
                             <span class="slider round"></span>
                         </label>
+                    </div>
+                    <div style="font-size:0.75rem; color:#9ca3af; margin-bottom:12px; margin-top:-8px; line-height:1.3;">
+                        ${desc}
                     </div>
                     ${alert.enabled ? `
                     <div class="setting-inputs">
@@ -869,6 +896,11 @@
                 alert[field] = value;
                 if (field === 'enabled') renderSettings(); 
             }
+        };
+
+        // NEW: Generic setting updater for non-alert settings
+        window.updateGlobalSetting = (key, value) => {
+            appState.settings[key] = value;
         };
 
         window.saveSettingsAndClose = () => {
@@ -1146,8 +1178,11 @@
             }
             update(vario) {
                 if(appState.muted) return;
-                if(vario < -2.0) { this.stopBeep(); if(!this.osc) { const s=this.playTone(200, 'sawtooth'); this.osc=s.o; } if(this.osc) this.osc.frequency.value = Math.max(100, 300 + (vario*50)); } 
-                else if(vario > 0.2) { if(this.osc) { this.osc.stop(); this.osc=null; } if(!this.isBeeping) { this.isBeeping=true; this.scheduleBeep(vario); } } 
+                const liftThresh = appState.settings.liftThreshold || 0.2;
+                const sinkThresh = appState.settings.sinkThreshold || -2.0;
+
+                if(vario < sinkThresh) { this.stopBeep(); if(!this.osc) { const s=this.playTone(200, 'sawtooth'); this.osc=s.o; } if(this.osc) this.osc.frequency.value = Math.max(100, 300 + (vario*50)); } 
+                else if(vario > liftThresh) { if(this.osc) { this.osc.stop(); this.osc=null; } if(!this.isBeeping) { this.isBeeping=true; this.scheduleBeep(vario); } } 
                 else { this.stopAll(); }
             }
             scheduleBeep(vario) {
