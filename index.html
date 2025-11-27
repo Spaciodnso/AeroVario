@@ -805,6 +805,11 @@
                 this.lastTime = 0;
             }
 
+            // FIX: Added init method
+            init() {
+                console.log("VarioEngine initialized");
+            }
+
             update(alt, time) {
                 this.buffer.push({t: time, alt: alt});
                 const now = time;
@@ -1059,8 +1064,8 @@
             appState.varioEngine.init();
 
             window.addEventListener('deviceorientation',e=>{
-                if(e.webkitCompassHeading){appState.sensors.magHeading=e.webkitCompassHeading;$('compass-status').innerText="MAG: OK";$('compass-status').style.color='var(--neon-green)'}
-                else if(e.alpha!==null){appState.sensors.magHeading=360-e.alpha;$('compass-status').innerText="MAG: OK"}
+                if(e.webkitCompassHeading){appState.sensors.magHeading=e.webkitCompassHeading;$('gps-status').innerText="GPS: OK";$('gps-status').style.color='var(--neon-green)'}
+                else if(e.alpha!==null){appState.sensors.magHeading=360-e.alpha;$('gps-status').innerText="GPS: OK"}
                 if(e.beta!==null)appState.sensors.pitch=e.beta;if(e.gamma!==null)appState.sensors.roll=e.gamma;
             });
             
