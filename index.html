@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -69,7 +68,7 @@
             position: fixed;
             left: 16px; /* Match top-bar padding */
             top: calc(env(safe-area-inset-top) + 7px);
-            z-index: 1000; /* High visibility, but below Modals (2000) */
+            z-index: 3000; /* Increased to 3000 to be above everything */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
         }
 
@@ -164,7 +163,7 @@
         }
         .tick { position: absolute; right: 0; width: 6px; height: 1px; background: #666; }
 
-        /* Split Container for Vario Number and Horizon */
+        /* Split Container for Vario Number and Compass */
         .vario-split-container {
             flex: 1;
             display: flex;
@@ -234,13 +233,11 @@
             width: 30px; height: 30px;
             z-index: 10;
             will-change: transform;
-            /* Default centered */
         }
         
-        /* Small digital readout inside the compass */
         .ios-hdg-readout {
             position: absolute;
-            bottom: 6px; left: 6px; /* Moved to bottom-left */
+            bottom: 6px; left: 6px; 
             font-family: -apple-system, sans-serif;
             font-size: 11px; color: #fff; font-weight: 600;
             text-align: left;
@@ -757,6 +754,18 @@
     <script>
         const $ = (id) => document.getElementById(id);
         window.onerror = (msg, url, line) => $('error-console').innerText += `\nERR: ${msg}`;
+
+        // GLOBAL HELPER FUNCTIONS (Including toggleModal restoration)
+        window.toggleModal = (id, show) => {
+            const el = $(id);
+            if(show) {
+                el.classList.remove('hidden');
+                if(id==='modal-settings') renderSettings();
+                if(id==='modal-logs') renderLogs();
+            } else {
+                el.classList.add('hidden');
+            }
+        };
 
         // --- WIDGET REGISTRY (DATA LIBRARY) ---
         const WIDGETS_REGISTRY = {
