@@ -365,6 +365,12 @@
             cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
         }
 
+        .btn-download-igc {
+            width: 100%; background: rgba(163, 230, 53, 0.2); color: #a3e635; border: 1px solid #65a30d;
+            padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold; font-size: 0.8rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+
         .btn-delete-log {
             background: none; border: none; font-size: 1.2rem; cursor: pointer; opacity: 0.7; padding: 8px; color: #ef4444;
         }
@@ -1013,6 +1019,60 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
+        // --- IGC EXPORT UTILS ---
+        function decimalToIGC(val, isLat) {
+            const abs = Math.abs(val);
+            const deg = Math.floor(abs);
+            const min = (abs - deg) * 60;
+            const degStr = deg.toString().padStart(isLat ? 2 : 3, '0');
+            const minStr = Math.floor(min).toString().padStart(2, '0');
+            const decMinStr = Math.floor((min % 1) * 1000).toString().padStart(3, '0');
+            let hemi = '';
+            if (isLat) hemi = val >= 0 ? 'N' : 'S';
+            else hemi = val >= 0 ? 'E' : 'W';
+            return `${degStr}${minStr}${decMinStr}${hemi}`;
+        }
+
+        function downloadLogIGC(startTime) {
+            const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
+            const log = logs.find(l => l.startTime === startTime);
+            if (!log || !log.route || log.route.length === 0) { alert("Sin datos de ruta"); return; }
+            
+            const dateObj = new Date(log.startTime);
+            const dateStr = 
+                ('0' + dateObj.getUTCDate()).slice(-2) + 
+                ('0' + (dateObj.getUTCMonth()+1)).slice(-2) + 
+                dateObj.getUTCFullYear().toString().slice(-2);
+            
+            // Header
+            let igcContent = `AAVP001AeroVarioPro\r\nHFDTE${dateStr}\r\nHFPLTPILOTAeroVario User\r\nHFDTM100GPSDATUM WGS-84\r\n`;
+            
+            // B Records: B HHMMSS DDMMmmmN DDDMMmmmE A PPPPP GGGGG
+            log.route.forEach(pt => {
+                const t = new Date(pt.t || log.startTime); // fallback if track point has no time, theoretically fullTrack has 't'
+                const hhmmss = 
+                    ('0' + t.getUTCHours()).slice(-2) + 
+                    ('0' + t.getUTCMinutes()).slice(-2) + 
+                    ('0' + t.getUTCSeconds()).slice(-2);
+                
+                const latStr = decimalToIGC(pt.lat, true);
+                const lonStr = decimalToIGC(pt.lon, false);
+                const altStr = ('00000' + Math.round(pt.alt)).slice(-5); // Use GPS alt for Pressure too as fallback
+                
+                igcContent += `B${hhmmss}${latStr}${lonStr}A${altStr}${altStr}\r\n`;
+            });
+
+            const blob = new Blob([igcContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `flight_${dateStr}.igc`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         // --- GEOCODING UTIL ---
         async function fetchLocationName(lat, lon) {
             try {
@@ -1102,7 +1162,10 @@
                             <div class="detail-box"><div class="d-label">Max Desc</div><div class="d-val text-red-400">${log.maxSink}</div></div>
                             <div class="detail-box"><div class="d-label">Vel Max</div><div class="d-val">${log.maxSpeed}km/h</div></div>
                         </div>
-                        ${(log.route && log.route.length > 0) ? `<button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">🗺️ Ver Mapa</button>` : ''}
+                        ${(log.route && log.route.length > 0) ? `
+                            <button class="btn-map-view" onclick="viewFlightMap(${log.startTime})">🗺️ Ver Mapa</button>
+                            <button class="btn-download-igc" onclick="downloadLogIGC(${log.startTime})">📥 Descargar IGC</button>
+                        ` : ''}
                     </div>
                 </div>`;
                 container.innerHTML += html;
@@ -1151,7 +1214,7 @@
                     takeoffAlt: Math.round(startPt.alt), maxAlt: appState.stats.maxAlt, gain: Math.max(0, appState.stats.maxAlt - Math.round(startPt.alt)),
                     maxClimb: appState.stats.maxClimb.toFixed(1), maxSink: appState.stats.maxSink.toFixed(1),
                     location: appState.startLocation || "Desconocido",
-                    route: appState.fullTrack.map(p => ({ lat: parseFloat(p.lat.toFixed(5)), lon: parseFloat(p.lon.toFixed(5)), a: Math.round(p.alt) }))
+                    route: appState.fullTrack.map(p => ({ lat: parseFloat(p.lat.toFixed(5)), lon: parseFloat(p.lon.toFixed(5)), a: Math.round(p.alt), t: p.t }))
                 };
                 const logs = JSON.parse(localStorage.getItem('glider_flight_history') || '[]');
                 logs.push(flightLog);
